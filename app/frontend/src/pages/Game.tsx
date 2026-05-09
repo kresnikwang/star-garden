@@ -172,24 +172,34 @@ export default function Game() {
       setClickCount(newCount);
 
       if (newCount % 10 === 0) {
-        const emoji = theme.collectibleEmojis[dailyVariation.collectibleIndex];
+        // Cycle through all collectibles based on total clicks
+        const emojiIndex = Math.floor(((newCount - 1) / 10)) % theme.collectibleEmojis.length;
+        const emoji = theme.collectibleEmojis[emojiIndex];
         const updated = addCollectible(collection, emoji);
         setCollection(updated);
         setShowCollect({ emoji, x: event.x, y: event.y });
         setTimeout(() => setShowCollect(null), 1500);
 
-        // Discovery: collector (20 items)
+        // Discovery: collector (20 items total)
         const totalItems = Object.values(updated.collected).reduce((s, c) => s + c, 0);
         if (totalItems >= 20 && !afterXP.hiddenDiscoveries.includes('collector')) {
           const discoveredState = discoverHidden(afterXP, 'collector');
           setGrowth(discoveredState);
           showDiscovery('🏆 发现彩蛋：收藏家');
         }
+
+        // Discovery: theme_complete (all items collected at least once)
+        const allCollected = theme.collectibleEmojis.every(e => (updated.collected[e] || 0) >= 1);
+        if (allCollected && !afterXP.hiddenDiscoveries.includes('theme_complete')) {
+          const discoveredState = discoverHidden(afterXP, 'theme_complete');
+          setGrowth(discoveredState);
+          showDiscovery('🎑 发现彩蛋：四季收藏家');
+        }
       }
 
       setShowUI(true);
     },
-    [clickCount, collection, theme, dailyVariation.collectibleIndex, growth]
+    [clickCount, collection, theme, growth]
   );
 
   const handleBreathingComplete = useCallback(() => {
@@ -255,16 +265,14 @@ export default function Game() {
         onSwipeEnd={() => {
           audioRef.current?.stopSwipeSound();
         }}
-        onPinch={(scale: number, cx: number, cy: number) => {
-          // Pinch gesture triggers a special visual + audio effect
-          audioRef.current?.init();
-          if (scale < 1) {
-            // Pinch in - implosion sound
-            audioRef.current?.playNote(theme, 1, 0.3);
-          } else {
-            // Pinch out - expansion sound
-            audioRef.current?.playNote(theme, 12, 0.3);
-          }
+        onPinchStart={(scale: number, cx: number, cy: number) => {
+          audioRef.current?.startPinchSound(theme, scale);
+        }}
+        onPinchMove={(scale: number) => {
+          audioRef.current?.updatePinchSound(theme, scale);
+        }}
+        onPinchEnd={() => {
+          audioRef.current?.stopPinchSound();
         }}
       />
 

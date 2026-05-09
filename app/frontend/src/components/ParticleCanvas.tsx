@@ -38,10 +38,12 @@ interface ParticleCanvasProps {
   onSwipeStart?: (y: number) => void;
   onSwipeMove?: (y: number) => void;
   onSwipeEnd?: () => void;
-  onPinch?: (scale: number, cx: number, cy: number) => void;
+  onPinchStart?: (scale: number, cx: number, cy: number) => void;
+  onPinchMove?: (scale: number) => void;
+  onPinchEnd?: () => void;
 }
 
-export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChargeEnd, onSwipeStart, onSwipeMove, onSwipeEnd, onPinch }: ParticleCanvasProps) {
+export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChargeEnd, onSwipeStart, onSwipeMove, onSwipeEnd, onPinchStart, onPinchMove, onPinchEnd }: ParticleCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const particlesRef = useRef<Particle[]>([]);
   const animFrameRef = useRef<number>(0);
@@ -69,7 +71,9 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
   const onSwipeStartRef = useRef(onSwipeStart);
   const onSwipeMoveRef = useRef(onSwipeMove);
   const onSwipeEndRef = useRef(onSwipeEnd);
-  const onPinchRef = useRef(onPinch);
+  const onPinchStartRef = useRef(onPinchStart);
+  const onPinchMoveRef = useRef(onPinchMove);
+  const onPinchEndRef = useRef(onPinchEnd);
   const growthRef = useRef(growth);
   const themeRef = useRef(theme);
 
@@ -92,8 +96,14 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
     onSwipeEndRef.current = onSwipeEnd;
   }, [onSwipeEnd]);
   useEffect(() => {
-    onPinchRef.current = onPinch;
-  }, [onPinch]);
+    onPinchStartRef.current = onPinchStart;
+  }, [onPinchStart]);
+  useEffect(() => {
+    onPinchMoveRef.current = onPinchMove;
+  }, [onPinchMove]);
+  useEffect(() => {
+    onPinchEndRef.current = onPinchEnd;
+  }, [onPinchEnd]);
   useEffect(() => {
     growthRef.current = growth;
   }, [growth]);
@@ -615,9 +625,11 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
         if (!pinchActiveRef.current) {
           pinchStartDistRef.current = dist;
           pinchActiveRef.current = true;
+          const scale = dist / pinchStartDistRef.current;
+          onPinchStartRef.current?.(scale, cx, cy);
         } else {
           const scale = dist / pinchStartDistRef.current;
-          onPinchRef.current?.(scale, cx, cy);
+          onPinchMoveRef.current?.(scale);
           // Create pinch visual effect
           createPinchEffect(cx, cy, scale);
           // Fire pinch gesture event
@@ -683,10 +695,23 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
       if (pinchActiveRef.current) {
         pinchActiveRef.current = false;
         pinchStartDistRef.current = 0;
+        onPinchEndRef.current?.();
         if (e.touches.length === 0) {
           touchStartRef.current = null;
           touchPathRef.current = [];
           isLongPressingRef.current = false;
+        } else if (e.touches.length === 1) {
+          // One finger remains - update touch start for potential single-finger gesture
+          const remaining = e.touches[0];
+          const pos = getPos(remaining);
+          touchStartRef.current = { x: pos.x, y: pos.y, time: Date.now() };
+          touchPathRef.current = [pos];
+          lastTouchPosRef.current = pos;
+          hasMoved.current = false;
+          if (longPressTimerRef.current) {
+            clearTimeout(longPressTimerRef.current);
+            longPressTimerRef.current = null;
+          }
         }
         return;
       }

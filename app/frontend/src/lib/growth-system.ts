@@ -39,6 +39,7 @@ export const HIDDEN_DISCOVERIES = [
   { id: 'night_owl', name: '夜行者', emoji: '🦉', condition: 'Play after midnight' },
   { id: 'rainbow_trail', name: '彩虹轨迹', emoji: '🌈', condition: 'Swipe 50 times' },
   { id: 'galaxy_maker', name: '造星者', emoji: '⭐', condition: 'Create 10 nebulas' },
+  { id: 'theme_complete', name: '四季收藏家', emoji: '🎑', condition: 'Collect all items in a theme' },
 ];
 
 export const LEVEL_EFFECTS: Record<number, string> = {
