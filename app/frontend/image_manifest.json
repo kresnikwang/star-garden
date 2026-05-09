@@ -1,0 +1,48 @@
+{
+  "status": "success",
+  "results": [
+    {
+      "status": "success",
+      "path": "https://mgx-backend-cdn.metadl.com/generate/images/1071821/2026-05-08/oeowwjaaagnq/spring-theme-bg.png",
+      "absolute_path": "https://mgx-backend-cdn.metadl.com/generate/images/1071821/2026-05-08/oeowwjaaagnq/spring-theme-bg.png",
+      "url": "https://mgx-backend-cdn.metadl.com/generate/images/1071821/2026-05-08/oeowwjaaagnq/spring-theme-bg.png",
+      "message": "Image generated successfully.\n\nNote: The image is on CDN and will be displayed automatically. Just describe what you created briefly, no need to mention filenames or URLs.",
+      "description": "Dreamy spring night sky background with soft cherry blossom petals floating, deep navy blue sky with subtle stars, pink and white sakura flowers glowing softly, ethereal and calming atmosphere, gradient from dark blue top to slightly lighter bottom",
+      "style": "watercolor",
+      "filename": "spring-theme-bg.jpg"
+    },
+    {
+      "status": "success",
+      "path": "https://mgx-backend-cdn.metadl.com/generate/images/1071821/2026-05-08/oeowx2iaagpq/summer-theme-bg.png",
+      "absolute_path": "https://mgx-backend-cdn.metadl.com/generate/images/1071821/2026-05-08/oeowx2iaagpq/summer-theme-bg.png",
+      "url": "https://mgx-backend-cdn.metadl.com/generate/images/1071821/2026-05-08/oeowx2iaagpq/summer-theme-bg.png",
+      "message": "Image generated successfully.\n\nNote: The image is on CDN and will be displayed automatically. Just describe what you created briefly, no need to mention filenames or URLs.",
+      "description": "Warm summer tropical starry night background, deep indigo sky filled with bright stars, fireflies glowing in warm yellow and green, lush tropical leaves silhouette at edges, ocean blue and teal gradient, magical and serene atmosphere",
+      "style": "watercolor",
+      "filename": "summer-theme-bg.jpg"
+    },
+    {
+      "status": "success",
+      "path": "https://mgx-backend-cdn.metadl.com/generate/images/1071821/2026-05-08/oeowv6iaagpa/autumn-theme-bg.png",
+      "absolute_path": "https://mgx-backend-cdn.metadl.com/generate/images/1071821/2026-05-08/oeowv6iaagpa/autumn-theme-bg.png",
+      "url": "https://mgx-backend-cdn.metadl.com/generate/images/1071821/2026-05-08/oeowv6iaagpa/autumn-theme-bg.png",
+      "message": "Image generated successfully.\n\nNote: The image is on CDN and will be displayed automatically. Just describe what you created briefly, no need to mention filenames or URLs.",
+      "description": "Autumn night sky background with golden maple leaves gently falling, deep purple and amber gradient sky, warm orange and red tones, scattered golden stars, cozy and nostalgic atmosphere, soft glow effects",
+      "style": "watercolor",
+      "filename": "autumn-theme-bg.jpg"
+    },
+    {
+      "status": "success",
+      "path": "https://mgx-backend-cdn.metadl.com/generate/images/1071821/2026-05-08/oeowtlaaagoq/winter-theme-bg.png",
+      "absolute_path": "https://mgx-backend-cdn.metadl.com/generate/images/1071821/2026-05-08/oeowtlaaagoq/winter-theme-bg.png",
+      "url": "https://mgx-backend-cdn.metadl.com/generate/images/1071821/2026-05-08/oeowtlaaagoq/winter-theme-bg.png",
+      "message": "Image generated successfully.\n\nNote: The image is on CDN and will be displayed automatically. Just describe what you created briefly, no need to mention filenames or URLs.",
+      "description": "Winter crystal night sky background with soft snowflakes falling, deep midnight blue sky with aurora borealis hints in pale green and blue, ice crystals sparkling, silver and white tones, peaceful and magical cold atmosphere",
+      "style": "watercolor",
+      "filename": "winter-theme-bg.jpg"
+    }
+  ],
+  "success_count": 4,
+  "failed_count": 0,
+  "message": "Generated 4/4 images"
+}
