@@ -387,7 +387,7 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
             swipeDir: 'down',
           });
         } else {
-          // Horizontal light streak particles
+          // Horizontal swipe particles (same round shape as vertical)
           const dirMult = dir === 'right' ? 1 : -1;
           newParticles.push({
             x: x + (Math.random() - 0.5) * 6,
@@ -398,9 +398,9 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
             maxLife: 35 + Math.random() * 25,
             color: colors[Math.floor(Math.random() * colors.length)],
             size: 2 + Math.random() * 3,
-            type: 'lighttrail',
+            type: 'swipe',
             rotation: dir === 'right' ? 0 : Math.PI,
-            rotationSpeed: 0,
+            rotationSpeed: (Math.random() - 0.5) * 0.1,
             swipeDir: dir,
           });
         }

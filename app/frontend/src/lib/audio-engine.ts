@@ -21,12 +21,15 @@ export class AudioEngine {
   private swipeFilterNode: BiquadFilterNode | null = null;
   private swipeActive = false;
 
-  // Pinch continuous sound state (soft, sustained)
-  private pinchOscIn: OscillatorNode | null = null;
-  private pinchOscOut: OscillatorNode | null = null;
+  // Pinch continuous sound state (3-note chord for musical richness)
+  private pinchOscRoot: OscillatorNode | null = null;
+  private pinchOscThird: OscillatorNode | null = null;
+  private pinchOscFifth: OscillatorNode | null = null;
   private pinchGain: GainNode | null = null;
   private pinchFilter: BiquadFilterNode | null = null;
   private pinchActive = false;
+  private pinchArpLfo: OscillatorNode | null = null;
+  private pinchArpGain: GainNode | null = null;
 
   init(): void {
     if (this.ctx) return;
@@ -291,7 +294,7 @@ export class AudioEngine {
     this.swipeActive = false;
   }
 
-  // Start continuous pinch sound (soft sustained tone)
+  // Start continuous pinch sound (3-note chord that shifts with scale)
   startPinchSound(theme: ThemeConfig, scale: number): void {
     if (!this.ctx || !this.masterGain) {
       this.init();
@@ -300,75 +303,103 @@ export class AudioEngine {
     this.stopPinchSound();
 
     const ctx = this.ctx!;
-    const baseFreq = theme.pentatonicScale[Math.floor(theme.pentatonicScale.length / 2)];
-    const freqMultiplier = scale < 1 ? 0.5 + scale * 0.5 : 1 + (scale - 1) * 0.5;
-    const freq = baseFreq * freqMultiplier;
+    const scaleArr = theme.pentatonicScale;
 
-    // Main oscillator - sine for softness
-    this.pinchOscIn = ctx.createOscillator();
+    // Pick a base note from the scale based on pinch scale
+    // scale < 1 (pinch in) → lower notes; scale > 1 (pinch out) → higher notes
+    const baseIndex = Math.min(
+      Math.floor((scale - 0.5) * 4),
+      scaleArr.length - 4
+    );
+    const safeIndex = Math.max(0, baseIndex);
+    const rootFreq = scaleArr[safeIndex];
+
+    // Create 3-note chord: root + third + fifth
+    this.pinchOscRoot = ctx.createOscillator();
+    this.pinchOscThird = ctx.createOscillator();
+    this.pinchOscFifth = ctx.createOscillator();
     this.pinchGain = ctx.createGain();
     this.pinchFilter = ctx.createBiquadFilter();
 
-    this.pinchOscIn.type = 'sine';
-    this.pinchOscIn.frequency.value = freq;
+    this.pinchOscRoot.type = 'sine';
+    this.pinchOscThird.type = 'sine';
+    this.pinchOscFifth.type = 'sine';
 
-    // Low-pass filter for extra softness (cut highs)
+    this.pinchOscRoot.frequency.value = rootFreq;
+    this.pinchOscThird.frequency.value = rootFreq * 1.25; // Just major third (5/4)
+    this.pinchOscFifth.frequency.value = rootFreq * 1.5;  // Perfect fifth (3/2)
+
+    // Low-pass filter for softness
     this.pinchFilter.type = 'lowpass';
-    this.pinchFilter.frequency.value = freq * 2;
-    this.pinchFilter.Q.value = 1;
+    this.pinchFilter.frequency.value = rootFreq * 4;
+    this.pinchFilter.Q.value = 0.5;
 
-    // Gentle gain - much lower than before
+    // Gentle fade in
     this.pinchGain.gain.setValueAtTime(0, ctx.currentTime);
-    this.pinchGain.gain.linearRampToValueAtTime(0.1, ctx.currentTime + 0.15);
+    this.pinchGain.gain.linearRampToValueAtTime(0.12, ctx.currentTime + 0.2);
 
-    this.pinchOscIn.connect(this.pinchFilter);
+    // Connect all oscillators through filter
+    this.pinchOscRoot.connect(this.pinchFilter);
+    this.pinchOscThird.connect(this.pinchFilter);
+    this.pinchOscFifth.connect(this.pinchFilter);
     this.pinchFilter.connect(this.pinchGain);
     this.pinchGain.connect(this.masterGain);
-    this.pinchOscIn.start(ctx.currentTime);
 
-    // Soft second oscillator for divergence (pinch out) - fifth, very gentle
-    if (scale >= 1) {
-      this.pinchOscOut = ctx.createOscillator();
-      this.pinchOscOut.type = 'sine';
-      this.pinchOscOut.frequency.value = freq * 1.5; // Soft fifth, NOT octave (which was too piercing)
-      const outGain = ctx.createGain();
-      outGain.gain.value = 0.05;
-      this.pinchOscOut.connect(outGain);
-      outGain.connect(this.masterGain);
-      this.pinchOscOut.start(ctx.currentTime);
-    }
+    this.pinchOscRoot.start(ctx.currentTime);
+    this.pinchOscThird.start(ctx.currentTime);
+    this.pinchOscFifth.start(ctx.currentTime);
+
+    // Arpeggio LFO: gently modulate the chord balance for a "breathing" musical feel
+    this.pinchArpLfo = ctx.createOscillator();
+    this.pinchArpGain = ctx.createGain();
+    this.pinchArpLfo.type = 'sine';
+    this.pinchArpLfo.frequency.value = 2; // 2 Hz subtle pulse
+    this.pinchArpGain.gain.value = 0.03;
+    this.pinchArpLfo.connect(this.pinchArpGain);
+    this.pinchArpGain.connect(this.pinchGain.gain);
+    this.pinchArpLfo.start(ctx.currentTime);
 
     this.pinchActive = true;
   }
 
-  // Update pinch sound pitch based on current scale
+  // Update pinch sound: shift the whole chord up/down based on scale
   updatePinchSound(theme: ThemeConfig, scale: number): void {
     if (!this.pinchActive || !this.ctx) return;
-    const baseFreq = theme.pentatonicScale[Math.floor(theme.pentatonicScale.length / 2)];
-    const freqMultiplier = scale < 1 ? 0.5 + scale * 0.5 : 1 + (scale - 1) * 0.5;
-    const freq = baseFreq * freqMultiplier;
+    const scaleArr = theme.pentatonicScale;
 
-    if (this.pinchOscIn) {
-      this.pinchOscIn.frequency.linearRampToValueAtTime(freq, this.ctx.currentTime + 0.05);
+    const baseIndex = Math.min(
+      Math.floor((scale - 0.5) * 4),
+      scaleArr.length - 4
+    );
+    const safeIndex = Math.max(0, baseIndex);
+    const rootFreq = scaleArr[safeIndex];
+
+    const rampTime = this.ctx.currentTime + 0.08;
+
+    if (this.pinchOscRoot) {
+      this.pinchOscRoot.frequency.linearRampToValueAtTime(rootFreq, rampTime);
+    }
+    if (this.pinchOscThird) {
+      this.pinchOscThird.frequency.linearRampToValueAtTime(rootFreq * 1.25, rampTime);
+    }
+    if (this.pinchOscFifth) {
+      this.pinchOscFifth.frequency.linearRampToValueAtTime(rootFreq * 1.5, rampTime);
     }
     if (this.pinchFilter) {
-      this.pinchFilter.frequency.linearRampToValueAtTime(freq * 2, this.ctx.currentTime + 0.05);
-    }
-    if (this.pinchOscOut) {
-      this.pinchOscOut.frequency.linearRampToValueAtTime(freq * 1.5, this.ctx.currentTime + 0.05);
+      this.pinchFilter.frequency.linearRampToValueAtTime(rootFreq * 4, rampTime);
     }
   }
 
   // Stop pinch sound with fade out
   stopPinchSound(): void {
-    if (!this.pinchActive && !this.pinchOscIn && !this.pinchOscOut) {
-      // Clean up any stale nodes
-      try { this.pinchOscIn?.stop(); } catch {}
-      try { this.pinchOscOut?.stop(); } catch {}
-      this.pinchOscIn = null;
-      this.pinchOscOut = null;
+    if (!this.pinchActive && !this.pinchOscRoot && !this.pinchOscThird && !this.pinchOscFifth) {
+      this.pinchOscRoot = null;
+      this.pinchOscThird = null;
+      this.pinchOscFifth = null;
       this.pinchGain = null;
       this.pinchFilter = null;
+      this.pinchArpLfo = null;
+      this.pinchArpGain = null;
       this.pinchActive = false;
       return;
     }
@@ -380,22 +411,31 @@ export class AudioEngine {
       } catch {}
     }
 
-    const oscIn = this.pinchOscIn;
-    const oscOut = this.pinchOscOut;
+    const oscR = this.pinchOscRoot;
+    const osc3 = this.pinchOscThird;
+    const osc5 = this.pinchOscFifth;
     const gain = this.pinchGain;
     const filter = this.pinchFilter;
+    const arp = this.pinchArpLfo;
+    const arpGain = this.pinchArpGain;
 
     setTimeout(() => {
-      try { oscIn?.stop(); } catch {}
-      try { oscOut?.stop(); } catch {}
+      try { oscR?.stop(); } catch {}
+      try { osc3?.stop(); } catch {}
+      try { osc5?.stop(); } catch {}
+      try { arp?.stop(); } catch {}
       try { gain?.disconnect(); } catch {}
       try { filter?.disconnect(); } catch {}
+      try { arpGain?.disconnect(); } catch {}
     }, 250);
 
-    this.pinchOscIn = null;
-    this.pinchOscOut = null;
+    this.pinchOscRoot = null;
+    this.pinchOscThird = null;
+    this.pinchOscFifth = null;
     this.pinchGain = null;
     this.pinchFilter = null;
+    this.pinchArpLfo = null;
+    this.pinchArpGain = null;
     this.pinchActive = false;
   }
 
