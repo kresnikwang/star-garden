@@ -64,6 +64,10 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
   const pinchStartDistRef = useRef(0);
   const pinchActiveRef = useRef(false);
 
+  // Track which touch triggered long press (for multi-touch handling)
+  const longPressTouchIdRef = useRef<number | null>(null);
+  const longPressStartPosRef = useRef<{ x: number; y: number } | null>(null);
+
   // Store callbacks in refs to avoid stale closures in native event listeners
   const onGestureRef = useRef(onGesture);
   const onChargeStartRef = useRef(onChargeStart);
@@ -592,6 +596,22 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
 
     const onTouchStart = (e: TouchEvent) => {
       e.preventDefault();
+
+      // If a second finger is placed while a long-press timer is running,
+      // cancel the timer — user intent is pinch, not long press.
+      if (e.touches.length >= 2 && longPressTouchIdRef.current !== null && !isLongPressingRef.current) {
+        if (longPressTimerRef.current) {
+          clearTimeout(longPressTimerRef.current);
+          longPressTimerRef.current = null;
+        }
+        longPressTouchIdRef.current = null;
+        longPressStartPosRef.current = null;
+        return;
+      }
+
+      // If already tracking a long-press candidate (timer running or active), don't interfere
+      if (longPressTouchIdRef.current !== null) return;
+
       const touch = e.touches[0];
       const { x, y } = getPos(touch);
 
@@ -604,7 +624,12 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
       // Start long press timer if unlocked
       if (isGestureUnlocked(growthRef.current, 'longpress')) {
         chargeStartRef.current = Date.now();
+        longPressTouchIdRef.current = touch.identifier;
+        longPressStartPosRef.current = { x, y };
         longPressTimerRef.current = setTimeout(() => {
+          // Defensive: if timer was cancelled (set to null) while this callback
+          // was pending in the event loop, don't start the charge sound.
+          if (longPressTimerRef.current === null) return;
           isLongPressingRef.current = true;
           onChargeStartRef.current?.();
         }, 500);
@@ -614,8 +639,8 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
     const onTouchMove = (e: TouchEvent) => {
       e.preventDefault();
 
-      // Pinch gesture detection (two fingers)
-      if (e.touches.length === 2) {
+      // Pinch gesture detection (two fingers, neither is long-pressing)
+      if (e.touches.length === 2 && !isLongPressingRef.current) {
         const t1 = e.touches[0];
         const t2 = e.touches[1];
         const dist = Math.sqrt((t1.clientX - t2.clientX) ** 2 + (t1.clientY - t2.clientY) ** 2);
@@ -634,6 +659,40 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
           createPinchEffect(cx, cy, scale);
           // Fire pinch gesture event
           onGestureRef.current({ type: 'pinch', x: cx, y: cy, data: { radius: dist } });
+        }
+        return;
+      }
+
+      // One finger long-pressing + another finger moving → allow swipe on the moving finger
+      if (e.touches.length === 2 && isLongPressingRef.current) {
+        const sliding = Array.from(e.touches).find(t => t.identifier !== longPressTouchIdRef.current);
+        if (!sliding) return;
+
+        const { x, y } = getPos(sliding);
+        const prev = lastTouchPosRef.current;
+        lastTouchPosRef.current = { x, y };
+
+        if (!hasMoved.current && prev) {
+          const dist = Math.sqrt((x - prev.x) ** 2 + (y - prev.y) ** 2);
+          if (dist > 5) {
+            hasMoved.current = true;
+            onSwipeStartRef.current?.(y);
+          }
+        }
+
+        if (hasMoved.current) {
+          onSwipeMoveRef.current?.(y);
+        }
+
+        if (prev) {
+          const vx = x - prev.x;
+          const vy = y - prev.y;
+          if (Math.sqrt(vx * vx + vy * vy) > 2) {
+            const start = touchStartRef.current;
+            const dx = start ? x - start.x : vx;
+            const dy = start ? y - start.y : vy;
+            createSwipeTrail(x, y, vx, vy, getSwipeDirection(dx, dy));
+          }
         }
         return;
       }
@@ -686,9 +745,76 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
 
     const onTouchEnd = (e: TouchEvent) => {
       e.preventDefault();
+
+      // Clear any pending long press timer
       if (longPressTimerRef.current) {
         clearTimeout(longPressTimerRef.current);
         longPressTimerRef.current = null;
+      }
+
+      // If a long-press finger was tracked, check if it left
+      if (longPressTouchIdRef.current !== null) {
+        const longPressFingerLeft = Array.from(e.changedTouches).some(
+          t => t.identifier === longPressTouchIdRef.current
+        );
+
+        if (longPressFingerLeft) {
+          // The tracked finger left the screen
+          const wasLongPressing = isLongPressingRef.current;
+          const start = longPressStartPosRef.current;
+
+          if (wasLongPressing && start) {
+            // Actual long press release -> firework
+            const chargeTime = Date.now() - chargeStartRef.current;
+            createRisingFirework(start.x, start.y, chargeTime);
+            onGestureRef.current({ type: 'longpress', x: start.x, y: start.y, data: { chargeTime } });
+            onChargeEndRef.current?.();
+          }
+
+          // Clear long-press tracking
+          longPressTouchIdRef.current = null;
+          longPressStartPosRef.current = null;
+          isLongPressingRef.current = false;
+
+          // Stop swipe sound if active
+          if (hasMoved.current) {
+            onSwipeEndRef.current?.();
+          }
+
+          if (e.touches.length === 1) {
+            // Another finger remains — set it up for single-finger gestures
+            const remaining = e.touches[0];
+            const pos = getPos(remaining);
+            touchStartRef.current = { x: pos.x, y: pos.y, time: Date.now() };
+            touchPathRef.current = [pos];
+            lastTouchPosRef.current = pos;
+            hasMoved.current = false;
+          }
+
+          if (wasLongPressing) {
+            // Long press was fully handled — done
+            touchStartRef.current = null;
+            touchPathRef.current = [];
+            return;
+          }
+          // Not a long press — fall through to tap/swipe detection below
+          // Keep touchStartRef/touchPathRef for detection
+        } else {
+          // A non-long-pressing finger left while long-pressing is active
+          if (hasMoved.current) {
+            onSwipeEndRef.current?.();
+          }
+          if (e.touches.length === 1) {
+            // Only long-pressing finger remains — restore its state
+            const remaining = e.touches[0];
+            const pos = getPos(remaining);
+            touchStartRef.current = { x: pos.x, y: pos.y, time: Date.now() };
+            touchPathRef.current = [pos];
+            lastTouchPosRef.current = pos;
+            hasMoved.current = false;
+          }
+          return;
+        }
       }
 
       // End pinch gesture
@@ -701,17 +827,12 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
           touchPathRef.current = [];
           isLongPressingRef.current = false;
         } else if (e.touches.length === 1) {
-          // One finger remains - update touch start for potential single-finger gesture
           const remaining = e.touches[0];
           const pos = getPos(remaining);
           touchStartRef.current = { x: pos.x, y: pos.y, time: Date.now() };
           touchPathRef.current = [pos];
           lastTouchPosRef.current = pos;
           hasMoved.current = false;
-          if (longPressTimerRef.current) {
-            clearTimeout(longPressTimerRef.current);
-            longPressTimerRef.current = null;
-          }
         }
         return;
       }
@@ -730,17 +851,6 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
 
       const elapsed = Date.now() - start.time;
       const distance = Math.sqrt((endX - start.x) ** 2 + (endY - start.y) ** 2);
-
-      // Long press release -> rising firework
-      if (isLongPressingRef.current && elapsed > 500 && distance < 40) {
-        const chargeTime = elapsed;
-        createRisingFirework(start.x, start.y, chargeTime);
-        onGestureRef.current({ type: 'longpress', x: start.x, y: start.y, data: { chargeTime } });
-        touchStartRef.current = null;
-        touchPathRef.current = [];
-        isLongPressingRef.current = false;
-        return;
-      }
 
       // Circle detection
       if (isGestureUnlocked(growthRef.current, 'circle') && path.length > 15) {
@@ -761,7 +871,6 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
         const dir = getSwipeDirection(dx, dy);
         onGestureRef.current({ type: 'swipe', x: endX, y: endY, data: { direction: Math.atan2(dy, dx) } });
 
-        // Direction-specific end effects
         if (dir === 'up') {
           createUpSwipeEffect(endX, endY);
         } else if (dir === 'down') {
@@ -779,7 +888,6 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
       if (distance < 30 && elapsed < 500) {
         handleTap(endX, endY);
       } else if (!hasMoved.current && elapsed < 500) {
-        // Fallback: if didn't detect significant movement, treat as tap
         handleTap(endX, endY);
       }
 

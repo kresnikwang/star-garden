@@ -20,7 +20,11 @@ export interface GrowthState {
   hiddenDiscoveries: string[];
 }
 
-const GROWTH_KEY = 'starry-garden-growth';
+const GROWTH_KEY_PREFIX = 'starry-garden-growth';
+
+function getGrowthKey(themeId: string): string {
+  return `${GROWTH_KEY_PREFIX}-${themeId}`;
+}
 
 export const GESTURES: GestureType[] = [
   { id: 'tap', name: '点触绽放', icon: '👆', description: '点击屏幕绽放烟花', unlockLevel: 0 },
@@ -56,9 +60,9 @@ export const LEVEL_EFFECTS: Record<number, string> = {
   10: '大师级画面',
 };
 
-export function getGrowthState(): GrowthState {
+export function getGrowthState(themeId: string): GrowthState {
   try {
-    const stored = localStorage.getItem(GROWTH_KEY);
+    const stored = localStorage.getItem(getGrowthKey(themeId));
     if (stored) {
       return JSON.parse(stored) as GrowthState;
     }
@@ -78,19 +82,19 @@ export function getGrowthState(): GrowthState {
     totalPinches: 0,
     hiddenDiscoveries: [],
   };
-  saveGrowthState(initial);
+  saveGrowthState(themeId, initial);
   return initial;
 }
 
-export function saveGrowthState(state: GrowthState): void {
+export function saveGrowthState(themeId: string, state: GrowthState): void {
   try {
-    localStorage.setItem(GROWTH_KEY, JSON.stringify(state));
+    localStorage.setItem(getGrowthKey(themeId), JSON.stringify(state));
   } catch {
     // ignore
   }
 }
 
-export function addXP(state: GrowthState, amount: number): { state: GrowthState; leveledUp: boolean; newUnlocks: string[] } {
+export function addXP(themeId: string, state: GrowthState, amount: number): { state: GrowthState; leveledUp: boolean; newUnlocks: string[] } {
   const updated = { ...state };
   updated.xp += amount;
   let leveledUp = false;
@@ -117,15 +121,15 @@ export function addXP(state: GrowthState, amount: number): { state: GrowthState;
     }
   }
 
-  saveGrowthState(updated);
+  saveGrowthState(themeId, updated);
   return { state: updated, leveledUp, newUnlocks };
 }
 
-export function discoverHidden(state: GrowthState, discoveryId: string): GrowthState {
+export function discoverHidden(themeId: string, state: GrowthState, discoveryId: string): GrowthState {
   if (state.hiddenDiscoveries.includes(discoveryId)) return state;
   const updated = { ...state };
   updated.hiddenDiscoveries = [...updated.hiddenDiscoveries, discoveryId];
-  saveGrowthState(updated);
+  saveGrowthState(themeId, updated);
   return updated;
 }
 

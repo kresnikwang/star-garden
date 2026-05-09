@@ -28,7 +28,7 @@ export default function Game() {
   const [collection, setCollection] = useState<CollectionProgress>(() =>
     getCollection(themeId)
   );
-  const [growth, setGrowth] = useState<GrowthState>(() => getGrowthState());
+  const [growth, setGrowth] = useState<GrowthState>(() => getGrowthState(themeId));
   const [clickCount, setClickCount] = useState(0);
   const [showCollect, setShowCollect] = useState<{ emoji: string; x: number; y: number } | null>(null);
   const [melodyActive, setMelodyActive] = useState(false);
@@ -75,7 +75,7 @@ export default function Game() {
   useEffect(() => {
     const hour = new Date().getHours();
     if (hour >= 0 && hour < 5 && !growth.hiddenDiscoveries.includes('night_owl')) {
-      const updated = discoverHidden(growth, 'night_owl');
+      const updated = discoverHidden(themeId, growth, 'night_owl');
       setGrowth(updated);
       showDiscovery('🦉 发现彩蛋：夜行者');
     }
@@ -105,12 +105,12 @@ export default function Game() {
           updatedGrowth.totalSwipes += 1;
           // Discovery: first swipe
           if (!updatedGrowth.hiddenDiscoveries.includes('first_swipe')) {
-            updatedGrowth = discoverHidden(updatedGrowth, 'first_swipe');
+            updatedGrowth = discoverHidden(themeId, updatedGrowth, 'first_swipe');
             showDiscovery('🌈 发现彩蛋：初次光轨');
           }
           // Discovery: 50 swipes
           if (updatedGrowth.totalSwipes >= 50 && !updatedGrowth.hiddenDiscoveries.includes('rainbow_trail')) {
-            updatedGrowth = discoverHidden(updatedGrowth, 'rainbow_trail');
+            updatedGrowth = discoverHidden(themeId, updatedGrowth, 'rainbow_trail');
             showDiscovery('🌈 发现彩蛋：彩虹轨迹');
           }
           audioRef.current?.playNoteByPosition(theme, event.y, window.innerHeight);
@@ -122,7 +122,7 @@ export default function Game() {
           updatedGrowth.totalLongPress += 1;
           // Discovery: big firework (3+ seconds)
           if (chargeTime >= 3000 && !updatedGrowth.hiddenDiscoveries.includes('big_firework')) {
-            updatedGrowth = discoverHidden(updatedGrowth, 'big_firework');
+            updatedGrowth = discoverHidden(themeId, updatedGrowth, 'big_firework');
             showDiscovery('🎆 发现彩蛋：超级烟花');
           }
           // Stop charge sound and play explosion
@@ -135,12 +135,12 @@ export default function Game() {
           updatedGrowth.totalCircles += 1;
           // Discovery: first nebula
           if (!updatedGrowth.hiddenDiscoveries.includes('nebula_born')) {
-            updatedGrowth = discoverHidden(updatedGrowth, 'nebula_born');
+            updatedGrowth = discoverHidden(themeId, updatedGrowth, 'nebula_born');
             showDiscovery('🌌 发现彩蛋：星云诞生');
           }
           // Discovery: 10 nebulas
           if (updatedGrowth.totalCircles >= 10 && !updatedGrowth.hiddenDiscoveries.includes('galaxy_maker')) {
-            updatedGrowth = discoverHidden(updatedGrowth, 'galaxy_maker');
+            updatedGrowth = discoverHidden(themeId, updatedGrowth, 'galaxy_maker');
             showDiscovery('⭐ 发现彩蛋：造星者');
           }
           audioRef.current?.playNoteByPosition(theme, event.y, window.innerHeight);
@@ -154,7 +154,7 @@ export default function Game() {
       }
 
       // Add XP
-      const { state: afterXP, leveledUp, newUnlocks } = addXP(updatedGrowth, xpGain);
+      const { state: afterXP, leveledUp, newUnlocks } = addXP(themeId, updatedGrowth, xpGain);
       setGrowth(afterXP);
 
       if (leveledUp) {
@@ -171,9 +171,14 @@ export default function Game() {
       const newCount = clickCount + 1;
       setClickCount(newCount);
 
-      if (newCount % 10 === 0) {
-        // Cycle through all collectibles based on total clicks
-        const emojiIndex = Math.floor(((newCount - 1) / 10)) % theme.collectibleEmojis.length;
+      // Collect every 20 interactions (slower pace)
+      // Last 2 items require 'theme_complete' discovery (collect all first 5)
+      if (newCount % 20 === 0) {
+        const baseIndex = Math.floor(((newCount - 1) / 20)) % theme.collectibleEmojis.length;
+        const maxIndex = afterXP.hiddenDiscoveries.includes('theme_complete')
+          ? theme.collectibleEmojis.length
+          : 5;
+        const emojiIndex = baseIndex % maxIndex;
         const emoji = theme.collectibleEmojis[emojiIndex];
         const updated = addCollectible(collection, emoji);
         setCollection(updated);
@@ -183,15 +188,18 @@ export default function Game() {
         // Discovery: collector (20 items total)
         const totalItems = Object.values(updated.collected).reduce((s, c) => s + c, 0);
         if (totalItems >= 20 && !afterXP.hiddenDiscoveries.includes('collector')) {
-          const discoveredState = discoverHidden(afterXP, 'collector');
+          const discoveredState = discoverHidden(themeId, afterXP, 'collector');
           setGrowth(discoveredState);
           showDiscovery('🏆 发现彩蛋：收藏家');
         }
 
-        // Discovery: theme_complete (all items collected at least once)
-        const allCollected = theme.collectibleEmojis.every(e => (updated.collected[e] || 0) >= 1);
+        // Discovery: theme_complete — all available items collected
+        const checkEmojis = afterXP.hiddenDiscoveries.includes('theme_complete')
+          ? theme.collectibleEmojis
+          : theme.collectibleEmojis.slice(0, 5);
+        const allCollected = checkEmojis.every(e => (updated.collected[e] || 0) >= 1);
         if (allCollected && !afterXP.hiddenDiscoveries.includes('theme_complete')) {
-          const discoveredState = discoverHidden(afterXP, 'theme_complete');
+          const discoveredState = discoverHidden(themeId, afterXP, 'theme_complete');
           setGrowth(discoveredState);
           showDiscovery('🎑 发现彩蛋：四季收藏家');
         }
@@ -206,10 +214,10 @@ export default function Game() {
     setShowBreathing(false);
     const updated = { ...growth };
     updated.breathingSessions += 1;
-    saveGrowthState(updated);
+    saveGrowthState(themeId, updated);
 
     // Bonus XP for breathing
-    const { state: afterXP, leveledUp } = addXP(updated, 10);
+    const { state: afterXP, leveledUp } = addXP(themeId, updated, 10);
     setGrowth(afterXP);
 
     if (leveledUp) {
@@ -219,7 +227,7 @@ export default function Game() {
 
     // Discovery: breath master
     if (afterXP.breathingSessions >= 3 && !afterXP.hiddenDiscoveries.includes('breath_master')) {
-      const discoveredState = discoverHidden(afterXP, 'breath_master');
+      const discoveredState = discoverHidden(themeId, afterXP, 'breath_master');
       setGrowth(discoveredState);
       showDiscovery('🧘 发现彩蛋：呼吸大师');
     }
