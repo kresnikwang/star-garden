@@ -45,22 +45,46 @@ export function ShareCard({ theme, growth, collection, onClose }: ShareCardProps
       ctx.fill();
     }
 
-    // Decorative particles
+    // Decorative particles — glow via pre-rendered sprite (no shadowBlur)
     const colors = theme.particleColors;
+    const glowCache = new Map<string, HTMLCanvasElement>();
+    const getGlowSprite = (color: string, radius: number): HTMLCanvasElement => {
+      const key = `${color}|${radius}`;
+      if (glowCache.has(key)) return glowCache.get(key)!;
+      const d = Math.ceil(radius * 2) + 2;
+      const c = document.createElement('canvas');
+      c.width = d;
+      c.height = d;
+      const g = c.getContext('2d')!;
+      const grad = g.createRadialGradient(d / 2, d / 2, 0, d / 2, d / 2, radius);
+      grad.addColorStop(0, color);
+      grad.addColorStop(0.4, color);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = grad;
+      g.beginPath();
+      g.arc(d / 2, d / 2, radius, 0, Math.PI * 2);
+      g.fill();
+      glowCache.set(key, c);
+      return c;
+    };
+
     for (let i = 0; i < 30; i++) {
+      const px = w * 0.2 + Math.random() * w * 0.6;
+      const py = h * 0.15 + Math.random() * h * 0.3;
+      const pr = 2 + Math.random() * 4;
+      const pColor = colors[i % colors.length];
+
+      // Glow halo via sprite
+      const sprite = getGlowSprite(pColor, 10 + pr);
+      ctx.globalAlpha = 0.5;
+      ctx.drawImage(sprite, px - sprite.width / 2, py - sprite.height / 2);
+      ctx.globalAlpha = 1;
+
+      // Core
       ctx.beginPath();
-      ctx.arc(
-        w * 0.2 + Math.random() * w * 0.6,
-        h * 0.15 + Math.random() * h * 0.3,
-        2 + Math.random() * 4,
-        0,
-        Math.PI * 2
-      );
-      ctx.fillStyle = colors[i % colors.length] + '60';
-      ctx.shadowColor = colors[i % colors.length];
-      ctx.shadowBlur = 10;
+      ctx.arc(px, py, pr, 0, Math.PI * 2);
+      ctx.fillStyle = pColor + '60';
       ctx.fill();
-      ctx.shadowBlur = 0;
     }
 
     // Title

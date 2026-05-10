@@ -68,6 +68,48 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
   const auroraGradientRef = useRef<CanvasGradient | null>(null);
   const auroraGradientSizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 });
 
+  /**
+   * Glow-sprite cache — replaces ctx.shadowBlur on every particle draw.
+   *
+   * A "glow sprite" is a tiny offscreen canvas containing a radial gradient
+   * that looks identical to a filled circle with shadowBlur, but compositing
+   * a pre-baked image is ~5-10× cheaper than triggering the GPU blur pass.
+   *
+   * Cache key: `${color}|${glowRadius}` where glowRadius = particleSize * blurMult.
+   * The sprite is drawn at 2× the glow radius so the soft halo fits entirely
+   * inside the canvas bounds.
+   */
+  const glowCacheRef = useRef<Map<string, HTMLCanvasElement>>(new Map());
+
+  /** Return (creating if necessary) a cached glow-sprite for the given color and radius. */
+  const getGlowSprite = useCallback((color: string, glowRadius: number): HTMLCanvasElement => {
+    // Round radius to nearest 0.5 px to limit cache size without visible stepping
+    const r = Math.round(glowRadius * 2) / 2;
+    const key = `${color}|${r}`;
+    const cache = glowCacheRef.current;
+    if (cache.has(key)) return cache.get(key)!;
+
+    const diameter = Math.ceil(r * 2) + 2; // +2 px padding so edge doesn't clip
+    const sc = document.createElement('canvas');
+    sc.width = diameter;
+    sc.height = diameter;
+    const sctx = sc.getContext('2d')!;
+    const cx = diameter / 2;
+    const grad = sctx.createRadialGradient(cx, cx, 0, cx, cx, r);
+    grad.addColorStop(0,   color);               // opaque core
+    grad.addColorStop(0.4, color);               // hold color a bit
+    grad.addColorStop(1,   'rgba(0,0,0,0)');     // transparent edge
+    sctx.fillStyle = grad;
+    sctx.beginPath();
+    sctx.arc(cx, cx, r, 0, Math.PI * 2);
+    sctx.fill();
+
+    // Cap cache size to avoid unbounded memory growth
+    if (cache.size >= 256) cache.clear();
+    cache.set(key, sc);
+    return sc;
+  }, []);
+
   // Gesture tracking refs
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const touchPathRef = useRef<{ x: number; y: number }[]>([]);
@@ -1350,18 +1392,33 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
   const drawParticle = useCallback(
     (ctx: CanvasRenderingContext2D, p: Particle) => {
       const alpha = p.life;
-      ctx.save();
+
+      /**
+       * Stamp a glow sprite centred at (cx, cy) in *world* coordinates.
+       * glowR = the soft-halo radius (was shadowBlur × some multiplier).
+       * The sprite is drawn with 'lighter' blend so overlapping glows
+       * add up naturally, matching the old shadowBlur look.
+       */
+      const drawGlow = (cx: number, cy: number, glowR: number, color: string, glowAlpha: number) => {
+        const sprite = getGlowSprite(color, glowR);
+        const half = sprite.width / 2;
+        ctx.globalAlpha = alpha * glowAlpha;
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.drawImage(sprite, cx - half, cy - half);
+        ctx.globalCompositeOperation = 'source-over';
+      };
+
       ctx.translate(p.x, p.y);
       ctx.rotate(p.rotation);
       ctx.globalAlpha = alpha;
-
       ctx.fillStyle = p.color;
-      ctx.shadowColor = p.color;
 
-      // Special rendering for petal particles
+      // ── petal ──────────────────────────────────────────────────────────
       if (p.type === 'petal') {
-        ctx.shadowBlur = p.size * 2;
-        // Draw petal shape (ellipse)
+        // Soft glow halo underneath
+        drawGlow(0, 0, p.size * 2.5, p.color, 0.35);
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = p.color;
         ctx.beginPath();
         ctx.ellipse(0, 0, p.size * 0.6, p.size, 0, 0, Math.PI * 2);
         ctx.fill();
@@ -1371,15 +1428,16 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
         ctx.beginPath();
         ctx.ellipse(0, -p.size * 0.2, p.size * 0.2, p.size * 0.4, 0, 0, Math.PI * 2);
         ctx.fill();
-        ctx.restore();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
         return;
       }
 
-      // Special rendering for light trail particles
+      // ── lighttrail ─────────────────────────────────────────────────────
       if (p.type === 'lighttrail') {
-        ctx.shadowBlur = p.size * 3;
-        // Draw elongated streak
         const length = p.size * 3;
+        drawGlow(length * 0.5, 0, p.size * 3, p.color, 0.4);
+        ctx.globalAlpha = alpha;
         const gradient = ctx.createLinearGradient(-length, 0, length, 0);
         gradient.addColorStop(0, 'transparent');
         gradient.addColorStop(0.3, p.color);
@@ -1395,14 +1453,16 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
         ctx.beginPath();
         ctx.arc(length * 0.5, 0, p.size * 0.3, 0, Math.PI * 2);
         ctx.fill();
-        ctx.restore();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
         return;
       }
 
-      // Ground glow: soft halo that doesn't move
+      // ── groundglow ─────────────────────────────────────────────────────
       if (p.type === 'groundglow') {
-        ctx.shadowBlur = p.size * 6;
+        drawGlow(0, 0, p.size * 8, p.color, 0.3);
         ctx.globalAlpha = alpha * 0.4;
+        ctx.fillStyle = p.color;
         ctx.beginPath();
         ctx.arc(0, 0, p.size * 2, 0, Math.PI * 2);
         ctx.fill();
@@ -1410,25 +1470,29 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
         ctx.beginPath();
         ctx.arc(0, 0, p.size * 0.5, 0, Math.PI * 2);
         ctx.fill();
-        ctx.restore();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
         return;
       }
 
-      // Echo: small translucent orb
+      // ── echo ───────────────────────────────────────────────────────────
       if (p.type === 'echo') {
-        ctx.shadowBlur = p.size * 3;
+        drawGlow(0, 0, p.size * 3.5, p.color, 0.35);
         ctx.globalAlpha = alpha * 0.6;
+        ctx.fillStyle = p.color;
         ctx.beginPath();
         ctx.arc(0, 0, p.size, 0, Math.PI * 2);
         ctx.fill();
-        ctx.restore();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
         return;
       }
 
-      // Floater: larger soft orb with inner glow
+      // ── floater ────────────────────────────────────────────────────────
       if (p.type === 'floater') {
-        ctx.shadowBlur = p.size * 4;
+        drawGlow(0, 0, p.size * 5, p.color, 0.3);
         ctx.globalAlpha = alpha * 0.5;
+        ctx.fillStyle = p.color;
         ctx.beginPath();
         ctx.arc(0, 0, p.size * 1.5, 0, Math.PI * 2);
         ctx.fill();
@@ -1436,12 +1500,19 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
         ctx.beginPath();
         ctx.arc(0, 0, p.size * 0.6, 0, Math.PI * 2);
         ctx.fill();
-        ctx.restore();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
         return;
       }
 
+      // ── firework / charge / nebula / swipe / trail / sparkle / etc. ───
+      const glowMult = p.type === 'charge' ? 4 : p.type === 'nebula' ? 3 : 2;
+      const glowAlpha = p.type === 'charge' ? 0.6 : 0.45;
+      drawGlow(0, 0, p.size * glowMult, p.color, glowAlpha);
+
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = p.color;
       const shape = (p.type === 'firework' || p.type === 'charge') ? dailyVariation.particleShape : 'circle';
-      ctx.shadowBlur = p.type === 'charge' ? p.size * 4 : p.type === 'nebula' ? p.size * 3 : p.size * 2;
 
       switch (shape) {
         case 'star': {
@@ -1498,9 +1569,10 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
         }
       }
 
-      ctx.restore();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalAlpha = 1;
     },
-    [dailyVariation.particleShape]
+    [dailyVariation.particleShape, getGlowSprite]
   );
 
   // Animation loop
@@ -1581,6 +1653,8 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
 
       const w = canvas.width;
       const h = canvas.height;
+      const now = Date.now();
+      const timeSec = now * 0.001;
 
       // Draw background
       if (bgImageRef.current && bgImageRef.current.complete && bgImageRef.current.naturalWidth > 0) {
@@ -1654,8 +1728,7 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
         }
 
         // Composite pre-baked stars with a time-varying alpha to simulate twinkling
-        const time = Date.now() * 0.001;
-        const twinkle = 0.3 + 0.4 * Math.sin(time * 2);
+        const twinkle = 0.3 + 0.4 * Math.sin(timeSec * 2);
         ctx.globalAlpha = twinkle;
         ctx.drawImage(starCanvasRef.current, 0, 0);
         ctx.globalAlpha = 1;
@@ -1663,8 +1736,6 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
 
       // Aurora effect at level 8+
       if (growthRef.current.level >= 8) {
-        const time = Date.now() * 0.001;
-
         // Rebuild cached gradient only when canvas size changes
         if (!auroraGradientRef.current ||
             auroraGradientSizeRef.current.w !== w || auroraGradientSizeRef.current.h !== h) {
@@ -1682,7 +1753,7 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
         ctx.moveTo(0, h * 0.2);
         // Step 40px instead of 20px — half the path points, visually identical
         for (let x = 0; x <= w; x += 40) {
-          const y = h * 0.2 + Math.sin(x * 0.005 + time) * 40 + Math.sin(x * 0.01 + time * 1.5) * 20;
+          const y = h * 0.2 + Math.sin(x * 0.005 + timeSec) * 40 + Math.sin(x * 0.01 + timeSec * 1.5) * 20;
           ctx.lineTo(x, y);
         }
         ctx.lineTo(w, 0);
@@ -1733,16 +1804,16 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
           // Theme-specific ambient movement with breathing
           const themeId = themeRef.current.id;
           if (themeId === 'spring') {
-            p.vx += Math.sin(Date.now() * 0.001 + p.breathPhase!) * 0.002;
+            p.vx += Math.sin(timeSec + p.breathPhase!) * 0.002;
             p.rotation += p.rotationSpeed;
           } else if (themeId === 'summer') {
             // Fireflies: gentle upward drift with occasional direction change
-            p.vy += Math.sin(Date.now() * 0.002 + p.breathPhase!) * 0.001;
+            p.vy += Math.sin(now * 0.002 + p.breathPhase!) * 0.001;
           } else if (themeId === 'autumn') {
             p.vx += Math.sin(p.life * 8) * 0.02;
             p.rotation += p.rotationSpeed;
           } else if (themeId === 'winter') {
-            p.vx += Math.sin(Date.now() * 0.001 + p.x * 0.01) * 0.003;
+            p.vx += Math.sin(timeSec + p.x * 0.01) * 0.003;
           }
           p.vx *= 0.995;
           p.vy *= 0.995;
@@ -1762,7 +1833,7 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
           p.vy *= 0.97;
         } else if (p.type === 'floater') {
           // Floater particles gently bob up and down
-          p.vy += Math.sin(Date.now() * 0.003 + p.breathPhase!) * 0.01;
+          p.vy += Math.sin(now * 0.003 + p.breathPhase!) * 0.01;
           p.vx *= 0.98;
           p.vy *= 0.98;
         }
@@ -1775,17 +1846,21 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
             p.breathPhase += (p.breathSpeed || 1) * 0.02;
             const breathScale = 0.7 + 0.3 * Math.sin(p.breathPhase);
             const breathAlpha = 0.5 + 0.5 * Math.sin(p.breathPhase);
-            ctx.save();
-            ctx.translate(p.x, p.y);
-            ctx.rotate(p.rotation);
+            const glowR = p.size * breathScale * 2.5;
+            const sprite = getGlowSprite(p.color, glowR);
+            const half = sprite.width / 2;
+            // Glow halo via sprite (no shadowBlur)
+            ctx.globalAlpha = p.life * breathAlpha * 0.5;
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.drawImage(sprite, p.x - half, p.y - half);
+            ctx.globalCompositeOperation = 'source-over';
+            // Solid core circle
             ctx.globalAlpha = p.life * breathAlpha;
             ctx.fillStyle = p.color;
-            ctx.shadowColor = p.color;
-            ctx.shadowBlur = p.size * breathScale * 2;
             ctx.beginPath();
-            ctx.arc(0, 0, p.size * breathScale, 0, Math.PI * 2);
+            ctx.arc(p.x, p.y, p.size * breathScale, 0, Math.PI * 2);
             ctx.fill();
-            ctx.restore();
+            ctx.globalAlpha = 1;
           } else {
             drawParticle(ctx, p);
           }
@@ -1802,17 +1877,33 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
 
       // Draw charge indicator if long pressing
       if (isLongPressingRef.current && touchStartRef.current) {
-        const elapsed = Date.now() - chargeStartRef.current;
+        const elapsed = now - chargeStartRef.current;
         const chargeProgress = Math.min(elapsed / 3000, 1);
         const { x, y } = touchStartRef.current;
+        const chargeR = 20 + chargeProgress * 30;
+        const chargeAngle = Math.PI * 2 * chargeProgress;
+        const chargeColor = themeRef.current.accentColor;
+
+        // Glow halo (replaces shadowBlur=15) — multi-layer stroke
+        ctx.lineCap = 'round';
         ctx.beginPath();
-        ctx.arc(x, y, 20 + chargeProgress * 30, 0, Math.PI * 2 * chargeProgress);
-        ctx.strokeStyle = themeRef.current.accentColor + '80';
-        ctx.lineWidth = 3;
-        ctx.shadowColor = themeRef.current.accentColor;
-        ctx.shadowBlur = 15;
+        ctx.arc(x, y, chargeR, 0, chargeAngle);
+        ctx.strokeStyle = chargeColor + '20'; // 12.5% alpha
+        ctx.lineWidth = 3 + 30;
         ctx.stroke();
-        ctx.shadowBlur = 0;
+
+        ctx.beginPath();
+        ctx.arc(x, y, chargeR, 0, chargeAngle);
+        ctx.strokeStyle = chargeColor + '40'; // 25% alpha
+        ctx.lineWidth = 3 + 14;
+        ctx.stroke();
+
+        // Core arc
+        ctx.beginPath();
+        ctx.arc(x, y, chargeR, 0, chargeAngle);
+        ctx.strokeStyle = chargeColor + '80';
+        ctx.lineWidth = 3;
+        ctx.stroke();
 
         // Pulsing center dot
         ctx.beginPath();
@@ -1822,9 +1913,8 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
 
         // Edge pulse glow at level 7+
         if (growthRef.current.level >= 7) {
-          const time = Date.now() * 0.003;
-          const pulseRadius = 50 + chargeProgress * 100 + Math.sin(time) * 10;
-          const pulseAlpha = 0.1 + 0.1 * Math.sin(time * 2);
+          const pulseRadius = 50 + chargeProgress * 100 + Math.sin(now * 0.003) * 10;
+          const pulseAlpha = 0.1 + 0.1 * Math.sin(timeSec * 2);
           ctx.strokeStyle = themeRef.current.accentColor;
           ctx.globalAlpha = pulseAlpha * (1 - chargeProgress * 0.5);
           ctx.lineWidth = 2;
@@ -1836,7 +1926,7 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
       }
 
       // Quiet mode: floating orbs after 3 seconds of no interaction
-      const idleTime = Date.now() - lastInteractionRef.current;
+      const idleTime = now - lastInteractionRef.current;
       if (idleTime > 3000 && growthRef.current.level >= 2 && particlesRef.current.length < MAX_PARTICLES * 0.7) {
         const floaterCount = particlesRef.current.filter(p => p.type === 'floater').length;
         const maxFloaters = 3 + Math.floor(growthRef.current.level / 2);
