@@ -1923,6 +1923,12 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
           ctx.stroke();
           ctx.globalAlpha = 1;
         }
+
+        // Reset canvas state to prevent leakage into next frame
+        ctx.lineCap = 'butt';
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = '#000000';
+        ctx.fillStyle = '#000000';
       }
 
       // Quiet mode: floating orbs after 3 seconds of no interaction
