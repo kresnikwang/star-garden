@@ -17,6 +17,7 @@ export interface GrowthState {
   totalLongPress: number;
   totalCircles: number;
   totalPinches: number;
+  totalCombos: number;
   hiddenDiscoveries: string[];
 }
 
@@ -32,6 +33,9 @@ export const GESTURES: GestureType[] = [
   { id: 'longpress', name: '蓄力烟花', icon: '💫', description: '长按蓄力释放大型烟花', unlockLevel: 3 },
   { id: 'circle', name: '星云漩涡', icon: '🌀', description: '画圆创造旋转星云', unlockLevel: 5 },
   { id: 'pinch', name: '聚散星辰', icon: '🤏', description: '双指捏合聚拢或散开粒子', unlockLevel: 7 },
+  { id: 'combo_triple_tap', name: '主题爆发', icon: '💥', description: '快速三连击触发主题专属特效', unlockLevel: 4 },
+  { id: 'combo_circle_pinch', name: '星压缩', icon: '⚡', description: '画圆后捏合将星云压缩成能量球', unlockLevel: 6 },
+  { id: 'combo_dual_press', name: '粒子桥', icon: '🌉', description: '双指同时长按生成粒子桥', unlockLevel: 8 },
 ];
 
 export const HIDDEN_DISCOVERIES = [
@@ -44,6 +48,7 @@ export const HIDDEN_DISCOVERIES = [
   { id: 'rainbow_trail', name: '彩虹轨迹', emoji: '🌈', condition: 'Swipe 50 times' },
   { id: 'galaxy_maker', name: '造星者', emoji: '⭐', condition: 'Create 10 nebulas' },
   { id: 'theme_complete', name: '四季收藏家', emoji: '🎑', condition: 'Collect all items in a theme' },
+  { id: 'combo_master', name: '组合大师', emoji: '⚡', condition: 'Perform 5 combo moves' },
 ];
 
 export const LEVEL_EFFECTS: Record<number, string> = {
@@ -80,6 +85,7 @@ export function getGrowthState(themeId: string): GrowthState {
     totalLongPress: 0,
     totalCircles: 0,
     totalPinches: 0,
+    totalCombos: 0,
     hiddenDiscoveries: [],
   };
   saveGrowthState(themeId, initial);

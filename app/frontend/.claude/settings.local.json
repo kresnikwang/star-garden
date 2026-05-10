@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -E \"\\\\.\\(js|ts|jsx|tsx|json\\)$\")",
+      "Bash(npx tsc *)",
+      "Bash(awk 'NR>=250 && NR<=270' /Users/kresnikwang/Work/star-garden/app/frontend/src/components/ParticleCanvas.tsx)",
+      "Bash(awk 'NR>=308 && NR<=320' /Users/kresnikwang/Work/star-garden/app/frontend/src/components/ParticleCanvas.tsx)",
+      "Bash(awk 'NR>=246 && NR<=258' /Users/kresnikwang/Work/star-garden/app/frontend/src/components/ParticleCanvas.tsx)",
+      "Bash(awk 'NR>=337 && NR<=348' /Users/kresnikwang/Work/star-garden/app/frontend/src/components/ParticleCanvas.tsx)",
+      "Bash(awk 'NR>=388 && NR<=400' /Users/kresnikwang/Work/star-garden/app/frontend/src/components/ParticleCanvas.tsx)",
+      "Bash(awk 'NR>=452 && NR<=465' /Users/kresnikwang/Work/star-garden/app/frontend/src/components/ParticleCanvas.tsx)",
+      "Bash(awk 'NR>=483 && NR<=497' /Users/kresnikwang/Work/star-garden/app/frontend/src/components/ParticleCanvas.tsx)"
+    ]
+  }
+}

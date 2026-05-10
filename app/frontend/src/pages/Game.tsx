@@ -151,6 +151,30 @@ export default function Game() {
           updatedGrowth.totalPinches += 1;
           break;
         }
+        case 'combo_triple_tap': {
+          xpGain = 8;
+          updatedGrowth.totalCombos += 1;
+          audioRef.current?.playExplosionSound(theme);
+          break;
+        }
+        case 'combo_circle_pinch': {
+          xpGain = 10;
+          updatedGrowth.totalCombos += 1;
+          audioRef.current?.playExplosionSound(theme);
+          break;
+        }
+        case 'combo_dual_press': {
+          xpGain = 10;
+          updatedGrowth.totalCombos += 1;
+          audioRef.current?.playNoteByPosition(theme, event.y, window.innerHeight);
+          break;
+        }
+      }
+
+      // Discovery: combo master (5 combos)
+      if (updatedGrowth.totalCombos >= 5 && !updatedGrowth.hiddenDiscoveries.includes('combo_master')) {
+        updatedGrowth = discoverHidden(themeId, updatedGrowth, 'combo_master');
+        showDiscovery('⚡ 发现彩蛋：组合大师');
       }
 
       // Add XP
@@ -361,7 +385,8 @@ export default function Game() {
         )}
 
         <p className="text-white/50 text-xs">
-          🔥 连续{collection.streakDays}天 · 收集 {totalCollected} · 发现 {growth.hiddenDiscoveries.length}/8 彩蛋
+          🔥 连续{collection.streakDays}天 · 收集 {totalCollected} · 发现 {growth.hiddenDiscoveries.length}/10 彩蛋
+          {growth.totalCombos > 0 && ` · 组合技 ${growth.totalCombos}`}
         </p>
 
         {melodyActive && (

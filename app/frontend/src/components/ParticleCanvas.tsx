@@ -13,20 +13,26 @@ interface Particle {
   maxLife: number;
   color: string;
   size: number;
-  type: 'firework' | 'trail' | 'meteor' | 'ambient' | 'swipe' | 'charge' | 'nebula' | 'petal' | 'lighttrail' | 'sparkle';
+  type: 'firework' | 'trail' | 'meteor' | 'ambient' | 'swipe' | 'charge' | 'nebula' | 'petal' | 'lighttrail' | 'sparkle' | 'starfield' | 'groundglow' | 'echo' | 'floater';
   rotation: number;
   rotationSpeed: number;
   orbitAngle?: number;
   orbitRadius?: number;
   orbitSpeed?: number;
   swipeDir?: SwipeDirection;
+  // Breathing effect for ambient particles
+  breathPhase?: number;
+  breathSpeed?: number;
+  // Echo particle origin
+  echoOriginX?: number;
+  echoOriginY?: number;
 }
 
 export interface GestureEvent {
-  type: 'tap' | 'swipe' | 'longpress' | 'circle' | 'pinch';
+  type: 'tap' | 'swipe' | 'longpress' | 'circle' | 'pinch' | 'combo_triple_tap' | 'combo_circle_pinch' | 'combo_dual_press';
   x: number;
   y: number;
-  data?: { chargeTime?: number; radius?: number; direction?: number };
+  data?: { chargeTime?: number; radius?: number; direction?: number; comboData?: { themeId?: string; secondX?: number; secondY?: number } };
 }
 
 interface ParticleCanvasProps {
@@ -43,6 +49,9 @@ interface ParticleCanvasProps {
   onPinchEnd?: () => void;
 }
 
+// Global particle cap — keeps frame time predictable under rapid tapping
+const MAX_PARTICLES = 300;
+
 export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChargeEnd, onSwipeStart, onSwipeMove, onSwipeEnd, onPinchStart, onPinchMove, onPinchEnd }: ParticleCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const particlesRef = useRef<Particle[]>([]);
@@ -50,6 +59,14 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
   const bgImageRef = useRef<HTMLImageElement | null>(null);
   const consecutiveClicksRef = useRef(0);
   const lastClickTimeRef = useRef(0);
+  const lastInteractionRef = useRef(Date.now()); // Track last interaction for breathing mode
+
+  // Offscreen canvas for pre-rendered star field (rebuilt only on resize / level change)
+  const starCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const starCanvasLevelRef = useRef<number>(-1); // level when starCanvas was last drawn
+  // Cached aurora gradient (rebuilt only on resize)
+  const auroraGradientRef = useRef<CanvasGradient | null>(null);
+  const auroraGradientSizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 });
 
   // Gesture tracking refs
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
@@ -63,10 +80,17 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
   // Pinch gesture state
   const pinchStartDistRef = useRef(0);
   const pinchActiveRef = useRef(false);
+  const lastPinchCenterRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Combo tracking
+  const lastCircleRef = useRef<{ cx: number; cy: number; radius: number; time: number } | null>(null);
+  const tripleTapTrackerRef = useRef<{ x: number; y: number; time: number; count: number }>({ x: 0, y: 0, time: 0, count: 0 });
+  const dualPressStateRef = useRef<{ finger1: { id: number; x: number; y: number }; finger2: { id: number; x: number; y: number }; startTime: number } | null>(null);
 
   // Track which touch triggered long press (for multi-touch handling)
   const longPressTouchIdRef = useRef<number | null>(null);
   const longPressStartPosRef = useRef<{ x: number; y: number } | null>(null);
+  const secondLongPressRef = useRef<{ id: number; x: number; y: number; timer: ReturnType<typeof setTimeout> } | null>(null);
 
   // Store callbacks in refs to avoid stale closures in native event listeners
   const onGestureRef = useRef(onGesture);
@@ -116,6 +140,31 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
   }, [theme]);
 
   const dailyVariation = getDailyVariation(theme.id);
+
+  /**
+   * Add new particles while respecting MAX_PARTICLES.
+   * User-triggered particles (firework, charge, etc.) are kept;
+   * excess is shed by dropping the oldest ambient/trail/floater particles.
+   */
+  const addParticles = useCallback((newParticles: Particle[]) => {
+    if (newParticles.length === 0) return;
+    const combined = [...particlesRef.current, ...newParticles];
+    if (combined.length <= MAX_PARTICLES) {
+      particlesRef.current = combined;
+      return;
+    }
+    let excess = combined.length - MAX_PARTICLES;
+    const trimmed: Particle[] = [];
+    for (const p of combined) {
+      if (excess > 0 && (p.type === 'ambient' || p.type === 'trail' || p.type === 'floater')) {
+        excess--;
+      } else {
+        trimmed.push(p);
+      }
+    }
+    // If still over cap (all slots taken by high-priority particles) just slice
+    particlesRef.current = trimmed.length > MAX_PARTICLES ? trimmed.slice(trimmed.length - MAX_PARTICLES) : trimmed;
+  }, []);
 
   // Load background image with retry
   useEffect(() => {
@@ -199,9 +248,9 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
         });
       }
 
-      particlesRef.current = [...particlesRef.current, ...newParticles];
+      addParticles(newParticles);
     },
-    []
+    [addParticles]
   );
 
   // Determine swipe direction from angle
@@ -260,9 +309,9 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
         });
       }
 
-      particlesRef.current = [...particlesRef.current, ...newParticles];
+      addParticles(newParticles);
     },
-    []
+    [addParticles]
   );
 
   // Down swipe: petal rain / falling particles
@@ -291,9 +340,9 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
         });
       }
 
-      particlesRef.current = [...particlesRef.current, ...newParticles];
+      addParticles(newParticles);
     },
-    []
+    [addParticles]
   );
 
   // Left/Right swipe: light trail / comet streak
@@ -342,9 +391,9 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
         });
       }
 
-      particlesRef.current = [...particlesRef.current, ...newParticles];
+      addParticles(newParticles);
     },
-    []
+    [addParticles]
   );
 
   const createSwipeTrail = useCallback(
@@ -406,9 +455,9 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
         }
       }
 
-      particlesRef.current = [...particlesRef.current, ...newParticles];
+      addParticles(newParticles);
     },
-    []
+    [addParticles]
   );
 
   const createRisingFirework = useCallback(
@@ -437,14 +486,14 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
         });
       }
 
-      particlesRef.current = [...particlesRef.current, ...newParticles];
+      addParticles(newParticles);
 
       // Delayed explosion at target
       setTimeout(() => {
         createFireworkParticles(x, y, 1 + intensity);
       }, 400);
     },
-    [createFireworkParticles]
+    [createFireworkParticles, addParticles]
   );
 
   const createNebula = useCallback(
@@ -476,9 +525,9 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
         });
       }
 
-      particlesRef.current = [...particlesRef.current, ...newParticles];
+      addParticles(newParticles);
     },
-    []
+    [addParticles]
   );
 
   const createMeteorShower = useCallback(
@@ -505,9 +554,9 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
         });
       }
 
-      particlesRef.current = [...particlesRef.current, ...newParticles];
+      addParticles(newParticles);
     },
-    []
+    [addParticles]
   );
 
   // Create pinch visual effect (particles converge or diverge)
@@ -535,14 +584,217 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
         });
       }
 
-      particlesRef.current = [...particlesRef.current, ...newParticles];
+      addParticles(newParticles);
     },
-    []
+    [addParticles]
   );
+
+  // Combo 1: Circle + Pinch → compress nebula into energy ball
+  const createEnergyBall = useCallback((cx: number, cy: number, radius: number) => {
+    const colors = themeRef.current.particleColors;
+    const newParticles: Particle[] = [];
+
+    // Compress existing nebula particles toward center
+    for (const p of particlesRef.current) {
+      if (p.type === 'nebula') {
+        const dx = cx - p.x;
+        const dy = cy - p.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < radius * 2) {
+          p.vx += dx * 0.05;
+          p.vy += dy * 0.05;
+          p.orbitRadius = (p.orbitRadius || 0) * 0.9;
+        }
+      }
+    }
+
+    // Bright energy core
+    for (let i = 0; i < 20; i++) {
+      const angle = (Math.PI * 2 * i) / 20;
+      newParticles.push({
+        x: cx + Math.cos(angle) * 10,
+        y: cy + Math.sin(angle) * 10,
+        vx: Math.cos(angle) * (1 + Math.random()),
+        vy: Math.sin(angle) * (1 + Math.random()),
+        life: 1,
+        maxLife: 60 + Math.random() * 40,
+        color: '#FFFFFF',
+        size: 3 + Math.random() * 3,
+        type: 'charge',
+        rotation: 0,
+        rotationSpeed: 0,
+      });
+    }
+
+    // Outer energy ring
+    for (let i = 0; i < 12; i++) {
+      const angle = (Math.PI * 2 * i) / 12;
+      newParticles.push({
+        x: cx + Math.cos(angle) * (radius * 0.3),
+        y: cy + Math.sin(angle) * (radius * 0.3),
+        vx: Math.cos(angle) * 0.5,
+        vy: Math.sin(angle) * 0.5,
+        life: 1,
+        maxLife: 80 + Math.random() * 40,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        size: 2 + Math.random() * 2,
+        type: 'sparkle',
+        rotation: angle,
+        rotationSpeed: 0.1,
+      });
+    }
+
+    addParticles(newParticles);
+  }, [addParticles]);
+
+  // Combo 2: Dual long press → particle bridge between fingers
+  const createParticleBridge = useCallback((x1: number, y1: number, x2: number, y2: number) => {
+    const colors = themeRef.current.particleColors;
+    const newParticles: Particle[] = [];
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const steps = Math.floor(dist / 8);
+
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const px = x1 + dx * t;
+      const py = y1 + dy * t;
+      for (let j = 0; j < 2; j++) {
+        newParticles.push({
+          x: px + (Math.random() - 0.5) * 6,
+          y: py + (Math.random() - 0.5) * 6,
+          vx: (Math.random() - 0.5) * 0.3,
+          vy: (Math.random() - 0.5) * 0.3,
+          life: 1,
+          maxLife: 120 + Math.random() * 60,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          size: 1.5 + Math.random() * 2,
+          type: 'ambient',
+          rotation: 0,
+          rotationSpeed: 0,
+          breathPhase: Math.random() * Math.PI * 2,
+          breathSpeed: 2 + Math.random() * 2,
+        });
+      }
+    }
+
+    // Bridge endpoints glow
+    for (const pt of [{ x: x1, y: y1 }, { x: x2, y: y2 }]) {
+      for (let i = 0; i < 8; i++) {
+        const angle = (Math.PI * 2 * i) / 8;
+        newParticles.push({
+          x: pt.x + Math.cos(angle) * 8,
+          y: pt.y + Math.sin(angle) * 8,
+          vx: Math.cos(angle) * 0.5,
+          vy: Math.sin(angle) * 0.5,
+          life: 1,
+          maxLife: 50 + Math.random() * 30,
+          color: '#FFFFFF',
+          size: 2 + Math.random() * 2,
+          type: 'sparkle',
+          rotation: 0,
+          rotationSpeed: 0,
+        });
+      }
+    }
+
+    addParticles(newParticles);
+  }, [addParticles]);
+
+  // Combo 3: Triple tap → theme-specific burst
+  const createThemeBurst = useCallback((x: number, y: number) => {
+    const themeId = themeRef.current.id;
+    const colors = themeRef.current.particleColors;
+    const newParticles: Particle[] = [];
+
+    if (themeId === 'spring') {
+      // Cherry blossom rain
+      for (let i = 0; i < 30; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 1 + Math.random() * 3;
+        newParticles.push({
+          x: x + (Math.random() - 0.5) * 40,
+          y: y + (Math.random() - 0.5) * 40,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed + 1,
+          life: 1,
+          maxLife: 100 + Math.random() * 60,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          size: 2 + Math.random() * 3,
+          type: 'petal',
+          rotation: Math.random() * Math.PI * 2,
+          rotationSpeed: (Math.random() - 0.5) * 0.06,
+        });
+      }
+    } else if (themeId === 'summer') {
+      // Firefly burst
+      for (let i = 0; i < 25; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 2 + Math.random() * 4;
+        newParticles.push({
+          x,
+          y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          life: 1,
+          maxLife: 80 + Math.random() * 60,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          size: 2 + Math.random() * 2.5,
+          type: 'ambient',
+          rotation: 0,
+          rotationSpeed: 0,
+          breathPhase: Math.random() * Math.PI * 2,
+          breathSpeed: 3 + Math.random() * 3,
+        });
+      }
+    } else if (themeId === 'autumn') {
+      // Maple leaf whirlwind
+      for (let i = 0; i < 20; i++) {
+        const angle = (Math.PI * 2 * i) / 20;
+        const speed = 3 + Math.random() * 3;
+        newParticles.push({
+          x: x + Math.cos(angle) * 20,
+          y: y + Math.sin(angle) * 20,
+          vx: Math.cos(angle + Math.PI / 2) * speed,
+          vy: Math.sin(angle + Math.PI / 2) * speed,
+          life: 1,
+          maxLife: 90 + Math.random() * 50,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          size: 3 + Math.random() * 4,
+          type: 'petal',
+          rotation: angle,
+          rotationSpeed: (Math.random() > 0.5 ? 1 : -1) * 0.08,
+        });
+      }
+    } else {
+      // Winter: ice crystal burst
+      for (let i = 0; i < 24; i++) {
+        const angle = (Math.PI * 2 * i) / 24;
+        const speed = 1.5 + Math.random() * 3;
+        newParticles.push({
+          x,
+          y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          life: 1,
+          maxLife: 70 + Math.random() * 40,
+          color: i % 3 === 0 ? '#FFFFFF' : colors[Math.floor(Math.random() * colors.length)],
+          size: 1.5 + Math.random() * 2,
+          type: 'sparkle',
+          rotation: angle,
+          rotationSpeed: 0.05,
+        });
+      }
+    }
+
+    addParticles(newParticles);
+  }, [addParticles]);
 
   // Handle tap
   const handleTap = useCallback(
     (x: number, y: number) => {
+      lastInteractionRef.current = Date.now();
       const now = Date.now();
       if (now - lastClickTimeRef.current < 1000) {
         consecutiveClicksRef.current++;
@@ -551,12 +803,54 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
       }
       lastClickTimeRef.current = now;
 
+      // Combo: triple tap detection
+      const tracker = tripleTapTrackerRef.current;
+      const dist = Math.sqrt((x - tracker.x) ** 2 + (y - tracker.y) ** 2);
+      if (dist < 50 && now - tracker.time < 600) {
+        tracker.count++;
+      } else {
+        tracker.x = x;
+        tracker.y = y;
+        tracker.count = 1;
+      }
+      tracker.time = now;
+
+      if (tracker.count >= 3 && isGestureUnlocked(growthRef.current, 'combo_triple_tap')) {
+        tracker.count = 0;
+        createThemeBurst(x, y);
+        onGestureRef.current({ type: 'combo_triple_tap', x, y, data: { comboData: { themeId: themeRef.current.id } } });
+        return;
+      }
+
       createFireworkParticles(x, y);
 
       if (consecutiveClicksRef.current >= 5) {
         const canvas = canvasRef.current;
         if (canvas) createMeteorShower(canvas.width);
         consecutiveClicksRef.current = 0;
+      }
+
+      // Level 10+: echo particles after interaction
+      if (growthRef.current.level >= 10) {
+        for (let i = 0; i < 3; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const dist = 10 + Math.random() * 20;
+          particlesRef.current.push({
+            x: x + Math.cos(angle) * dist,
+            y: y + Math.sin(angle) * dist,
+            vx: Math.cos(angle) * 0.3,
+            vy: Math.sin(angle) * 0.3,
+            life: 1,
+            maxLife: 80 + Math.random() * 60,
+            color: themeRef.current.particleColors[Math.floor(Math.random() * themeRef.current.particleColors.length)],
+            size: 1 + Math.random() * 1.5,
+            type: 'echo',
+            rotation: 0,
+            rotationSpeed: 0,
+            echoOriginX: x,
+            echoOriginY: y,
+          });
+        }
       }
 
       onGestureRef.current({ type: 'tap', x, y });
@@ -596,6 +890,7 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
 
     const onTouchStart = (e: TouchEvent) => {
       e.preventDefault();
+      lastInteractionRef.current = Date.now();
 
       // If a second finger is placed while a long-press timer is running,
       // cancel the timer — user intent is pinch, not long press.
@@ -638,6 +933,7 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
 
     const onTouchMove = (e: TouchEvent) => {
       e.preventDefault();
+      lastInteractionRef.current = Date.now();
 
       // Pinch gesture detection (two fingers, neither is long-pressing)
       if (e.touches.length === 2 && !isLongPressingRef.current) {
@@ -648,27 +944,74 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
         const cy = (t1.clientY + t2.clientY) / 2;
 
         if (!pinchActiveRef.current) {
+          // Check for Circle + Pinch combo
+          const circle = lastCircleRef.current;
+          const now = Date.now();
+          if (circle && now - circle.time < 2000 && isGestureUnlocked(growthRef.current, 'combo_circle_pinch')) {
+            const comboDist = Math.sqrt((cx - circle.cx) ** 2 + (cy - circle.cy) ** 2);
+            if (comboDist < circle.radius * 1.5) {
+              // Combo triggered! Compress nebula into energy ball
+              createEnergyBall(circle.cx, circle.cy, circle.radius);
+              onGestureRef.current({ type: 'combo_circle_pinch', x: circle.cx, y: circle.cy, data: { radius: circle.radius } });
+              lastCircleRef.current = null;
+              // Don't start normal pinch, just return
+              return;
+            }
+          }
+
           pinchStartDistRef.current = dist;
           pinchActiveRef.current = true;
+          lastPinchCenterRef.current = { x: cx, y: cy };
           const scale = dist / pinchStartDistRef.current;
           onPinchStartRef.current?.(scale, cx, cy);
         } else {
           const scale = dist / pinchStartDistRef.current;
+          lastPinchCenterRef.current = { x: cx, y: cy };
           onPinchMoveRef.current?.(scale);
           // Create pinch visual effect
           createPinchEffect(cx, cy, scale);
-          // Fire pinch gesture event
-          onGestureRef.current({ type: 'pinch', x: cx, y: cy, data: { radius: dist } });
+          // NOTE: Don't fire pinch gesture event here — it would trigger
+          // on every touchmove. We fire it once in onTouchEnd instead.
         }
         return;
       }
 
-      // One finger long-pressing + another finger moving → allow swipe on the moving finger
+      // One finger long-pressing + another finger on screen
       if (e.touches.length === 2 && isLongPressingRef.current) {
         const sliding = Array.from(e.touches).find(t => t.identifier !== longPressTouchIdRef.current);
         if (!sliding) return;
 
         const { x, y } = getPos(sliding);
+
+        // Check for dual long press combo
+        if (isGestureUnlocked(growthRef.current, 'combo_dual_press')) {
+          if (!secondLongPressRef.current) {
+            // Start tracking second finger for dual press
+            const timer = setTimeout(() => {
+              if (secondLongPressRef.current && dualPressStateRef.current) {
+                // Both fingers held long enough — trigger combo!
+                const f1 = dualPressStateRef.current.finger1;
+                const f2 = dualPressStateRef.current.finger2;
+                createParticleBridge(f1.x, f1.y, f2.x, f2.y);
+                onGestureRef.current({
+                  type: 'combo_dual_press',
+                  x: (f1.x + f2.x) / 2,
+                  y: (f1.y + f2.y) / 2,
+                  data: { comboData: { secondX: f2.x, secondY: f2.y } }
+                });
+                dualPressStateRef.current = null;
+              }
+              secondLongPressRef.current = null;
+            }, 500);
+            secondLongPressRef.current = { id: sliding.identifier, x, y, timer };
+            dualPressStateRef.current = {
+              finger1: { id: longPressTouchIdRef.current!, x: longPressStartPosRef.current!.x, y: longPressStartPosRef.current!.y },
+              finger2: { id: sliding.identifier, x, y },
+              startTime: Date.now(),
+            };
+          }
+        }
+
         const prev = lastTouchPosRef.current;
         lastTouchPosRef.current = { x, y };
 
@@ -676,6 +1019,12 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
           const dist = Math.sqrt((x - prev.x) ** 2 + (y - prev.y) ** 2);
           if (dist > 5) {
             hasMoved.current = true;
+            // Cancel dual press tracking if second finger moved
+            if (secondLongPressRef.current) {
+              clearTimeout(secondLongPressRef.current.timer);
+              secondLongPressRef.current = null;
+              dualPressStateRef.current = null;
+            }
             onSwipeStartRef.current?.(y);
           }
         }
@@ -769,6 +1118,29 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
             createRisingFirework(start.x, start.y, chargeTime);
             onGestureRef.current({ type: 'longpress', x: start.x, y: start.y, data: { chargeTime } });
             onChargeEndRef.current?.();
+
+            // Level 10+: echo particles from long press release
+            if (growthRef.current.level >= 10) {
+              for (let i = 0; i < 4; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const dist = 15 + Math.random() * 25;
+                particlesRef.current.push({
+                  x: start.x + Math.cos(angle) * dist,
+                  y: start.y + Math.sin(angle) * dist,
+                  vx: Math.cos(angle) * 0.2,
+                  vy: Math.sin(angle) * 0.2,
+                  life: 1,
+                  maxLife: 100 + Math.random() * 80,
+                  color: themeRef.current.particleColors[Math.floor(Math.random() * themeRef.current.particleColors.length)],
+                  size: 1.5 + Math.random() * 2,
+                  type: 'echo',
+                  rotation: 0,
+                  rotationSpeed: 0,
+                  echoOriginX: start.x,
+                  echoOriginY: start.y,
+                });
+              }
+            }
           }
 
           // Clear long-press tracking
@@ -822,6 +1194,14 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
         pinchActiveRef.current = false;
         pinchStartDistRef.current = 0;
         onPinchEndRef.current?.();
+
+        // Fire pinch gesture event once (was removed from onTouchMove)
+        const center = lastPinchCenterRef.current;
+        if (center) {
+          onGestureRef.current({ type: 'pinch', x: center.x, y: center.y });
+          lastPinchCenterRef.current = null;
+        }
+
         if (e.touches.length === 0) {
           touchStartRef.current = null;
           touchPathRef.current = [];
@@ -858,6 +1238,33 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
         if (isCircle) {
           createNebula(cx, cy, radius);
           onGestureRef.current({ type: 'circle', x: cx, y: cy, data: { radius } });
+
+          // Record circle for combo detection
+          lastCircleRef.current = { cx, cy, radius, time: Date.now() };
+
+          // Level 10+: echo particles from circle gesture
+          if (growthRef.current.level >= 10) {
+            for (let i = 0; i < 4; i++) {
+              const angle = Math.random() * Math.PI * 2;
+              const dist = 20 + Math.random() * 30;
+              particlesRef.current.push({
+                x: cx + Math.cos(angle) * dist,
+                y: cy + Math.sin(angle) * dist,
+                vx: Math.cos(angle) * 0.25,
+                vy: Math.sin(angle) * 0.25,
+                life: 1,
+                maxLife: 100 + Math.random() * 80,
+                color: themeRef.current.particleColors[Math.floor(Math.random() * themeRef.current.particleColors.length)],
+                size: 1.5 + Math.random() * 2,
+                type: 'echo',
+                rotation: 0,
+                rotationSpeed: 0,
+                echoOriginX: cx,
+                echoOriginY: cy,
+              });
+            }
+          }
+
           touchStartRef.current = null;
           touchPathRef.current = [];
           return;
@@ -877,6 +1284,27 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
           createDownSwipeEffect(endX, endY);
         } else {
           createHorizontalSwipeEffect(start.x, start.y, endX, endY, dir);
+        }
+
+        // Level 5+: ground glow residue along swipe path
+        if (growthRef.current.level >= 5 && path.length > 5) {
+          const glowCount = Math.min(5, Math.floor(path.length / 10));
+          for (let i = 0; i < glowCount; i++) {
+            const pt = path[Math.floor((path.length * (i + 1)) / (glowCount + 1))];
+            particlesRef.current.push({
+              x: pt.x + (Math.random() - 0.5) * 10,
+              y: pt.y + (Math.random() - 0.5) * 10,
+              vx: 0,
+              vy: 0,
+              life: 1,
+              maxLife: 150 + Math.random() * 100,
+              color: themeRef.current.particleColors[Math.floor(Math.random() * themeRef.current.particleColors.length)],
+              size: 2 + Math.random() * 2,
+              type: 'groundglow',
+              rotation: 0,
+              rotationSpeed: 0,
+            });
+          }
         }
 
         touchStartRef.current = null;
@@ -971,6 +1399,47 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
         return;
       }
 
+      // Ground glow: soft halo that doesn't move
+      if (p.type === 'groundglow') {
+        ctx.shadowBlur = p.size * 6;
+        ctx.globalAlpha = alpha * 0.4;
+        ctx.beginPath();
+        ctx.arc(0, 0, p.size * 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = alpha * 0.8;
+        ctx.beginPath();
+        ctx.arc(0, 0, p.size * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        return;
+      }
+
+      // Echo: small translucent orb
+      if (p.type === 'echo') {
+        ctx.shadowBlur = p.size * 3;
+        ctx.globalAlpha = alpha * 0.6;
+        ctx.beginPath();
+        ctx.arc(0, 0, p.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        return;
+      }
+
+      // Floater: larger soft orb with inner glow
+      if (p.type === 'floater') {
+        ctx.shadowBlur = p.size * 4;
+        ctx.globalAlpha = alpha * 0.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, p.size * 1.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = alpha * 0.9;
+        ctx.beginPath();
+        ctx.arc(0, 0, p.size * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        return;
+      }
+
       const shape = (p.type === 'firework' || p.type === 'charge') ? dailyVariation.particleShape : 'circle';
       ctx.shadowBlur = p.type === 'charge' ? p.size * 4 : p.type === 'nebula' ? p.size * 3 : p.size * 2;
 
@@ -1045,27 +1514,66 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
     const resize = () => {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
+      // Invalidate cached offscreen canvases on resize
+      starCanvasLevelRef.current = -1;
+      auroraGradientRef.current = null;
     };
     resize();
     window.addEventListener('resize', resize);
 
     const addAmbient = () => {
-      const maxAmbient = 50 + growthRef.current.level * 10;
-      if (particlesRef.current.filter(p => p.type === 'ambient').length < maxAmbient) {
-        particlesRef.current.push({
-          x: Math.random() * canvas.width,
-          y: Math.random() * canvas.height,
-          vx: (Math.random() - 0.5) * 0.3,
-          vy: -0.2 - Math.random() * 0.3,
-          life: 1,
-          maxLife: 200 + Math.random() * 100,
-          color: themeRef.current.particleColors[Math.floor(Math.random() * themeRef.current.particleColors.length)],
-          size: 1 + Math.random() * 2,
-          type: 'ambient',
-          rotation: 0,
-          rotationSpeed: 0,
-        });
+      const level = growthRef.current.level;
+      const maxAmbient = 50 + level * 10;
+      if (particlesRef.current.filter(p => p.type === 'ambient').length >= maxAmbient) return;
+
+      const colors = themeRef.current.particleColors;
+      const color = colors[Math.floor(Math.random() * colors.length)];
+      const themeId = themeRef.current.id;
+
+      // Theme-specific ambient behavior
+      let vx = (Math.random() - 0.5) * 0.3;
+      let vy = -0.2 - Math.random() * 0.3;
+      let rotationSpeed = 0;
+      let size = 1 + Math.random() * 2;
+
+      if (themeId === 'spring') {
+        // Petal-like drifting
+        vx = (Math.random() - 0.5) * 0.5;
+        vy = 0.3 + Math.random() * 0.4;
+        rotationSpeed = (Math.random() - 0.5) * 0.03;
+      } else if (themeId === 'summer') {
+        // Firefly-like slow drift upward
+        vx = (Math.random() - 0.5) * 0.4;
+        vy = -0.1 - Math.random() * 0.2;
+        size = 1.5 + Math.random() * 2;
+      } else if (themeId === 'autumn') {
+        // Falling leaf-like
+        vx = (Math.random() - 0.5) * 0.6;
+        vy = 0.4 + Math.random() * 0.3;
+        rotationSpeed = (Math.random() - 0.5) * 0.04;
+        size = 2 + Math.random() * 2;
+      } else if (themeId === 'winter') {
+        // Snow-like slow fall
+        vx = (Math.random() - 0.5) * 0.2;
+        vy = 0.2 + Math.random() * 0.2;
+        size = 1 + Math.random() * 1.5;
       }
+
+      particlesRef.current.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        vx,
+        vy,
+        life: 1,
+        maxLife: 200 + Math.random() * 100,
+        color,
+        size,
+        type: 'ambient',
+        rotation: Math.random() * Math.PI * 2,
+        rotationSpeed,
+        breathPhase: Math.random() * Math.PI * 2,
+        breathSpeed: 0.5 + Math.random() * 1.5,
+      });
     };
 
     const animate = () => {
@@ -1117,18 +1625,63 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
         ctx.fillRect(0, 0, w, h);
       }
 
+      // Starfield twinkling at level 3+
+      // Star positions are static — pre-render to offscreen canvas; only twinkle alpha varies per frame.
+      // We bake the positions once (or when level changes) and stamp them each frame with a
+      // time-varying global alpha to approximate twinkling cheaply.
+      if (growthRef.current.level >= 3) {
+        const level = growthRef.current.level;
+        const starCount = 20 + level * 5;
+
+        // Rebuild offscreen star canvas when level changes or size changed
+        if (starCanvasLevelRef.current !== level || !starCanvasRef.current ||
+            starCanvasRef.current.width !== w || starCanvasRef.current.height !== h) {
+          const sc = document.createElement('canvas');
+          sc.width = w;
+          sc.height = h;
+          const sctx = sc.getContext('2d')!;
+          sctx.fillStyle = 'white';
+          for (let i = 0; i < starCount; i++) {
+            const sx = (i * 137.5) % w;
+            const sy = (i * 73.3) % h;
+            const starSize = 0.5 + (i % 3) * 0.3;
+            sctx.beginPath();
+            sctx.arc(sx, sy, starSize, 0, Math.PI * 2);
+            sctx.fill();
+          }
+          starCanvasRef.current = sc;
+          starCanvasLevelRef.current = level;
+        }
+
+        // Composite pre-baked stars with a time-varying alpha to simulate twinkling
+        const time = Date.now() * 0.001;
+        const twinkle = 0.3 + 0.4 * Math.sin(time * 2);
+        ctx.globalAlpha = twinkle;
+        ctx.drawImage(starCanvasRef.current, 0, 0);
+        ctx.globalAlpha = 1;
+      }
+
       // Aurora effect at level 8+
       if (growthRef.current.level >= 8) {
         const time = Date.now() * 0.001;
+
+        // Rebuild cached gradient only when canvas size changes
+        if (!auroraGradientRef.current ||
+            auroraGradientSizeRef.current.w !== w || auroraGradientSizeRef.current.h !== h) {
+          const grad = ctx.createLinearGradient(0, 0, w, h * 0.4);
+          grad.addColorStop(0, themeRef.current.particleColors[0]);
+          grad.addColorStop(0.5, themeRef.current.particleColors[2]);
+          grad.addColorStop(1, themeRef.current.particleColors[4] || themeRef.current.particleColors[0]);
+          auroraGradientRef.current = grad;
+          auroraGradientSizeRef.current = { w, h };
+        }
+
         ctx.globalAlpha = 0.08;
-        const auroraGrad = ctx.createLinearGradient(0, 0, w, h * 0.4);
-        auroraGrad.addColorStop(0, themeRef.current.particleColors[0]);
-        auroraGrad.addColorStop(0.5, themeRef.current.particleColors[2]);
-        auroraGrad.addColorStop(1, themeRef.current.particleColors[4] || themeRef.current.particleColors[0]);
-        ctx.fillStyle = auroraGrad;
+        ctx.fillStyle = auroraGradientRef.current;
         ctx.beginPath();
         ctx.moveTo(0, h * 0.2);
-        for (let x = 0; x <= w; x += 20) {
+        // Step 40px instead of 20px — half the path points, visually identical
+        for (let x = 0; x <= w; x += 40) {
           const y = h * 0.2 + Math.sin(x * 0.005 + time) * 40 + Math.sin(x * 0.01 + time * 1.5) * 20;
           ctx.lineTo(x, y);
         }
@@ -1167,29 +1720,83 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
         } else if (p.type === 'petal') {
           // Petals drift and sway like falling leaves
           p.vx += Math.sin(p.life * 10) * 0.03;
-          p.vy += 0.02; // Gentle gravity
+          p.vy += 0.02;
           p.vx *= 0.99;
           p.vy *= 0.99;
         } else if (p.type === 'lighttrail') {
-          // Light trails maintain horizontal momentum, fade quickly
           p.vx *= 0.96;
           p.vy *= 0.9;
         } else if (p.type === 'trail') {
           p.vy -= 0.01;
           p.vx *= 0.99;
+        } else if (p.type === 'ambient') {
+          // Theme-specific ambient movement with breathing
+          const themeId = themeRef.current.id;
+          if (themeId === 'spring') {
+            p.vx += Math.sin(Date.now() * 0.001 + p.breathPhase!) * 0.002;
+            p.rotation += p.rotationSpeed;
+          } else if (themeId === 'summer') {
+            // Fireflies: gentle upward drift with occasional direction change
+            p.vy += Math.sin(Date.now() * 0.002 + p.breathPhase!) * 0.001;
+          } else if (themeId === 'autumn') {
+            p.vx += Math.sin(p.life * 8) * 0.02;
+            p.rotation += p.rotationSpeed;
+          } else if (themeId === 'winter') {
+            p.vx += Math.sin(Date.now() * 0.001 + p.x * 0.01) * 0.003;
+          }
+          p.vx *= 0.995;
+          p.vy *= 0.995;
+        } else if (p.type === 'groundglow') {
+          // Ground glow particles don't move, just fade
+          p.vx *= 0.9;
+          p.vy *= 0.9;
+        } else if (p.type === 'echo') {
+          // Echo particles slowly drift away from origin
+          if (p.echoOriginX !== undefined && p.echoOriginY !== undefined) {
+            const dx = p.x - p.echoOriginX;
+            const dy = p.y - p.echoOriginY;
+            p.vx += dx * 0.001;
+            p.vy += dy * 0.001;
+          }
+          p.vx *= 0.97;
+          p.vy *= 0.97;
+        } else if (p.type === 'floater') {
+          // Floater particles gently bob up and down
+          p.vy += Math.sin(Date.now() * 0.003 + p.breathPhase!) * 0.01;
+          p.vx *= 0.98;
+          p.vy *= 0.98;
         }
 
         p.life -= 1 / p.maxLife;
 
         if (p.life > 0) {
-          drawParticle(ctx, p);
+          // Breathing effect for ambient and floater particles
+          if ((p.type === 'ambient' || p.type === 'floater') && p.breathPhase !== undefined) {
+            p.breathPhase += (p.breathSpeed || 1) * 0.02;
+            const breathScale = 0.7 + 0.3 * Math.sin(p.breathPhase);
+            const breathAlpha = 0.5 + 0.5 * Math.sin(p.breathPhase);
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            ctx.rotate(p.rotation);
+            ctx.globalAlpha = p.life * breathAlpha;
+            ctx.fillStyle = p.color;
+            ctx.shadowColor = p.color;
+            ctx.shadowBlur = p.size * breathScale * 2;
+            ctx.beginPath();
+            ctx.arc(0, 0, p.size * breathScale, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          } else {
+            drawParticle(ctx, p);
+          }
           alive.push(p);
         }
       }
       particlesRef.current = alive;
 
-      // Add ambient particles
-      if (Math.random() < 0.05 + growthRef.current.level * 0.01) {
+      // Add ambient particles (skip when near cap to avoid frame drops)
+      if (particlesRef.current.length < MAX_PARTICLES * 0.85 &&
+          Math.random() < 0.05 + growthRef.current.level * 0.01) {
         addAmbient();
       }
 
@@ -1212,6 +1819,70 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
         ctx.arc(x, y, 4 + chargeProgress * 4, 0, Math.PI * 2);
         ctx.fillStyle = themeRef.current.accentColor;
         ctx.fill();
+
+        // Edge pulse glow at level 7+
+        if (growthRef.current.level >= 7) {
+          const time = Date.now() * 0.003;
+          const pulseRadius = 50 + chargeProgress * 100 + Math.sin(time) * 10;
+          const pulseAlpha = 0.1 + 0.1 * Math.sin(time * 2);
+          ctx.strokeStyle = themeRef.current.accentColor;
+          ctx.globalAlpha = pulseAlpha * (1 - chargeProgress * 0.5);
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(x, y, pulseRadius, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
+      }
+
+      // Quiet mode: floating orbs after 3 seconds of no interaction
+      const idleTime = Date.now() - lastInteractionRef.current;
+      if (idleTime > 3000 && growthRef.current.level >= 2 && particlesRef.current.length < MAX_PARTICLES * 0.7) {
+        const floaterCount = particlesRef.current.filter(p => p.type === 'floater').length;
+        const maxFloaters = 3 + Math.floor(growthRef.current.level / 2);
+        if (floaterCount < maxFloaters && Math.random() < 0.02) {
+          particlesRef.current.push({
+            x: Math.random() * w,
+            y: h + 20,
+            vx: (Math.random() - 0.5) * 0.3,
+            vy: -0.3 - Math.random() * 0.2,
+            life: 1,
+            maxLife: 400 + Math.random() * 200,
+            color: themeRef.current.particleColors[Math.floor(Math.random() * themeRef.current.particleColors.length)],
+            size: 3 + Math.random() * 4,
+            type: 'floater',
+            rotation: 0,
+            rotationSpeed: 0,
+            breathPhase: Math.random() * Math.PI * 2,
+            breathSpeed: 0.3 + Math.random() * 0.5,
+          });
+        }
+      }
+
+      // Level 10+: random micro-bursts when idle
+      if (growthRef.current.level >= 10 && idleTime > 5000 && Math.random() < 0.005 &&
+          particlesRef.current.length + 8 <= MAX_PARTICLES) {
+        const bx = Math.random() * w;
+        const by = Math.random() * h * 0.6;
+        for (let i = 0; i < 8; i++) {
+          const angle = (Math.PI * 2 * i) / 8;
+          const speed = 0.5 + Math.random() * 1;
+          particlesRef.current.push({
+            x: bx,
+            y: by,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            life: 1,
+            maxLife: 60 + Math.random() * 40,
+            color: themeRef.current.particleColors[Math.floor(Math.random() * themeRef.current.particleColors.length)],
+            size: 1.5 + Math.random() * 2,
+            type: 'ambient',
+            rotation: 0,
+            rotationSpeed: 0,
+            breathPhase: Math.random() * Math.PI * 2,
+            breathSpeed: 1 + Math.random(),
+          });
+        }
       }
 
       animFrameRef.current = requestAnimationFrame(animate);
