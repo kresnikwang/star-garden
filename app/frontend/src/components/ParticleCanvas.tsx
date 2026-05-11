@@ -1,6 +1,13 @@
 import { useRef, useEffect, useCallback } from 'react';
 import { ThemeConfig, getDailyVariation } from '@/lib/themes';
 import { GrowthState, isGestureUnlocked } from '@/lib/growth-system';
+import { CollectionProgress } from '@/lib/collection';
+import {
+  CollectibleParticleType,
+  getActiveEffects,
+  calculateMixChance,
+  getCollectibleTypePriority,
+} from '@/lib/collectible-effects';
 
 type SwipeDirection = 'up' | 'down' | 'left' | 'right';
 
@@ -13,7 +20,9 @@ interface Particle {
   maxLife: number;
   color: string;
   size: number;
-  type: 'firework' | 'trail' | 'meteor' | 'ambient' | 'swipe' | 'charge' | 'nebula' | 'petal' | 'lighttrail' | 'sparkle' | 'starfield' | 'groundglow' | 'echo' | 'floater';
+  type:
+    | 'firework' | 'trail' | 'meteor' | 'ambient' | 'swipe' | 'charge' | 'nebula' | 'petal' | 'lighttrail' | 'sparkle' | 'starfield' | 'groundglow' | 'echo' | 'floater'
+    | CollectibleParticleType;
   rotation: number;
   rotationSpeed: number;
   orbitAngle?: number;
@@ -38,6 +47,7 @@ export interface GestureEvent {
 interface ParticleCanvasProps {
   theme: ThemeConfig;
   growth: GrowthState;
+  collection?: CollectionProgress;
   onGesture: (event: GestureEvent) => void;
   onChargeStart?: () => void;
   onChargeEnd?: () => void;
@@ -52,7 +62,7 @@ interface ParticleCanvasProps {
 // Global particle cap — keeps frame time predictable under rapid tapping
 const MAX_PARTICLES = 300;
 
-export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChargeEnd, onSwipeStart, onSwipeMove, onSwipeEnd, onPinchStart, onPinchMove, onPinchEnd }: ParticleCanvasProps) {
+export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeStart, onChargeEnd, onSwipeStart, onSwipeMove, onSwipeEnd, onPinchStart, onPinchMove, onPinchEnd }: ParticleCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const particlesRef = useRef<Particle[]>([]);
   const animFrameRef = useRef<number>(0);
@@ -60,6 +70,8 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
   const consecutiveClicksRef = useRef(0);
   const lastClickTimeRef = useRef(0);
   const lastInteractionRef = useRef(Date.now()); // Track last interaction for breathing mode
+  const collectionRef = useRef(collection);
+  useEffect(() => { collectionRef.current = collection; }, [collection]);
 
   // Offscreen canvas for pre-rendered star field (rebuilt only on resize / level change)
   const starCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -198,7 +210,7 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
     let excess = combined.length - MAX_PARTICLES;
     const trimmed: Particle[] = [];
     for (const p of combined) {
-      if (excess > 0 && (p.type === 'ambient' || p.type === 'trail' || p.type === 'floater')) {
+      if (excess > 0 && (p.type === 'ambient' || p.type === 'trail' || p.type === 'floater' || getCollectibleTypePriority(p.type))) {
         excess--;
       } else {
         trimmed.push(p);
@@ -288,6 +300,40 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
           rotation: 0,
           rotationSpeed: 0,
         });
+      }
+
+      // ── Collectible effect mixing ──────────────────────────────────
+      const coll = collectionRef.current;
+      if (coll && coll.collected && Object.keys(coll.collected).length > 0) {
+        const activeEffects = getActiveEffects(themeRef.current.id, coll.collected);
+        const mixChance = calculateMixChance(coll.collected);
+        for (const { effect, count: collectedCount } of activeEffects) {
+          if (Math.random() < mixChance * effect.baseChance) {
+            const intensityMultiplier = 1 + Math.log(collectedCount + 1) * 0.25;
+            const spawnCount = Math.floor((2 + Math.random() * 3) * intensityMultiplier);
+            const effectParticles = effect.spawnParticles(x, y, themeRef.current, spawnCount);
+            newParticles.push(
+              ...effectParticles.map((ep) => ({
+                x: ep.x,
+                y: ep.y,
+                vx: ep.vx,
+                vy: ep.vy,
+                life: ep.life,
+                maxLife: ep.maxLife,
+                color: ep.color,
+                size: ep.size,
+                type: ep.type as Particle['type'],
+                rotation: ep.rotation,
+                rotationSpeed: ep.rotationSpeed,
+                orbitAngle: ep.orbitAngle,
+                orbitRadius: ep.orbitRadius,
+                orbitSpeed: ep.orbitSpeed,
+                breathPhase: ep.breathPhase,
+                breathSpeed: ep.breathSpeed,
+              }))
+            );
+          }
+        }
       }
 
       addParticles(newParticles);
@@ -1505,6 +1551,127 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
         return;
       }
 
+      // ── collectible particle types ────────────────────────────────────
+      if (p.type === 'butterfly') {
+        drawGlow(0, 0, p.size * 3, p.color, 0.4);
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = p.color;
+        ctx.save();
+        ctx.translate(0, 0);
+        ctx.rotate(p.rotation);
+        ctx.beginPath();
+        ctx.ellipse(-3, -2, 4, 3, 0.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(3, -2, 4, 3, -0.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        return;
+      }
+
+      if (p.type === 'droplet') {
+        ctx.globalAlpha = alpha * 0.7;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(0, 0, p.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = alpha * 0.5;
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.beginPath();
+        ctx.arc(-p.size * 0.3, -p.size * 0.3, p.size * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        return;
+      }
+
+      if (p.type === 'ring') {
+        ctx.strokeStyle = p.color;
+        ctx.globalAlpha = alpha * 0.6;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, p.size, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        return;
+      }
+
+      if (p.type === 'snowflake') {
+        ctx.save();
+        ctx.rotate(p.rotation);
+        ctx.strokeStyle = p.color;
+        ctx.globalAlpha = alpha;
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 6; i++) {
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.lineTo(0, -p.size * 2);
+          ctx.stroke();
+          ctx.rotate(Math.PI / 3);
+        }
+        ctx.restore();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        return;
+      }
+
+      if (p.type === 'ice') {
+        ctx.save();
+        ctx.rotate(p.rotation);
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = alpha * 0.7;
+        ctx.beginPath();
+        ctx.moveTo(0, -p.size);
+        ctx.lineTo(p.size * 0.7, 0);
+        ctx.lineTo(0, p.size);
+        ctx.lineTo(-p.size * 0.7, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.globalAlpha = alpha * 0.3;
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.restore();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        return;
+      }
+
+      if (p.type === 'aurora') {
+        ctx.globalAlpha = alpha * 0.4;
+        const grad = ctx.createLinearGradient(-p.size, 0, p.size, 0);
+        grad.addColorStop(0, 'transparent');
+        grad.addColorStop(0.3, p.color);
+        grad.addColorStop(0.7, p.color);
+        grad.addColorStop(1, 'transparent');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, p.size, p.size * 0.3, p.rotation, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        return;
+      }
+
+      if (p.type === 'sunset') {
+        ctx.globalAlpha = alpha * 0.5;
+        const grad = ctx.createLinearGradient(-p.size, 0, p.size, 0);
+        grad.addColorStop(0, 'transparent');
+        grad.addColorStop(0.2, p.color);
+        grad.addColorStop(0.8, p.color);
+        grad.addColorStop(1, 'transparent');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, p.size, p.size * 0.15, p.rotation, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        return;
+      }
+
       // ── firework / charge / nebula / swipe / trail / sparkle / etc. ───
       const glowMult = p.type === 'charge' ? 4 : p.type === 'nebula' ? 3 : 2;
       const glowAlpha = p.type === 'charge' ? 0.6 : 0.45;
@@ -1836,6 +2003,107 @@ export function ParticleCanvas({ theme, growth, onGesture, onChargeStart, onChar
           p.vy += Math.sin(now * 0.003 + p.breathPhase!) * 0.01;
           p.vx *= 0.98;
           p.vy *= 0.98;
+        } else if (p.type === 'butterfly') {
+          p.x += p.vx + Math.sin(p.life * 10) * 0.5;
+          p.y += p.vy + Math.cos(p.life * 8) * 0.3;
+          p.rotation += 0.05;
+          p.life -= 0.003;
+        } else if (p.type === 'droplet') {
+          p.vy += 0.08;
+          p.y += p.vy;
+          p.x += p.vx;
+          p.vx *= 0.95;
+          const canvasH = canvasRef.current?.height || 800;
+          if (p.y > canvasH - 10 && p.vy > 0) {
+            p.vy *= -0.4;
+            p.y = canvasH - 10;
+          }
+          p.life -= 0.004;
+        } else if (p.type === 'ring') {
+          p.size += 1.5;
+          p.life -= 0.015;
+        } else if (p.type === 'firefly' || p.type === 'ember' || p.type === 'warmth') {
+          p.vy -= 0.008;
+          p.y += p.vy;
+          p.x += Math.sin(p.life * 15 + (p.breathPhase || 0)) * 0.3;
+          p.vx *= 0.97;
+          p.life -= 0.002;
+        } else if (p.type === 'maple' || p.type === 'wind') {
+          p.x += Math.sin(p.life * 5 + p.rotation) * 0.8 + p.vx * 0.3;
+          p.y += 0.6 + p.vy * 0.3;
+          p.rotation += 0.03;
+          p.life -= 0.003;
+        } else if (p.type === 'snowflake') {
+          p.x += Math.sin(p.life * 4 + p.rotation) * 0.5 + p.vx * 0.2;
+          p.y += 0.5 + p.vy * 0.2;
+          p.rotation += p.rotationSpeed;
+          p.life -= 0.002;
+        } else if (p.type === 'pinecone' || p.type === 'acorn') {
+          p.vy += 0.06;
+          p.y += p.vy;
+          p.x += p.vx;
+          p.vx *= 0.95;
+          const canvasH = canvasRef.current?.height || 800;
+          if (p.y > canvasH - 10 && p.vy > 0) {
+            p.vy *= -0.35;
+            p.y = canvasH - 10;
+          }
+          p.rotation += p.rotationSpeed;
+          p.life -= 0.004;
+        } else if (p.type === 'spore' || p.type === 'steam') {
+          p.x += p.vx + Math.sin(p.life * 6 + (p.breathPhase || 0)) * 0.2;
+          p.y += p.vy;
+          p.life -= 0.002;
+        } else if (p.type === 'wave') {
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vx *= 0.96;
+          p.vy *= 0.96;
+          p.life -= 0.008;
+        } else if (p.type === 'sprout') {
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vx *= 0.97;
+          p.vy *= 0.97;
+          p.life -= 0.004;
+        } else if (p.type === 'shell' || p.type === 'coral') {
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vx *= 0.98;
+          p.vy *= 0.98;
+          p.rotation += p.rotationSpeed;
+          p.life -= 0.004;
+        } else if (p.type === 'jellyfish') {
+          p.x += p.vx + Math.sin(p.life * 8 + (p.breathPhase || 0)) * 0.3;
+          p.y += p.vy;
+          p.life -= 0.002;
+        } else if (p.type === 'starfish') {
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vx *= 0.97;
+          p.vy *= 0.97;
+          p.rotation += p.rotationSpeed;
+          p.life -= 0.004;
+        } else if (p.type === 'ice' || p.type === 'snowman') {
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vx *= 0.97;
+          p.vy *= 0.97;
+          p.rotation += p.rotationSpeed;
+          p.life -= 0.005;
+        } else if (p.type === 'aurora') {
+          p.x += p.vx;
+          p.size += 0.3;
+          p.life -= 0.006;
+        } else if (p.type === 'bell') {
+          p.x += p.vx;
+          p.y += p.vy;
+          p.life -= 0.005;
+        } else if (p.type === 'sunset') {
+          p.x += p.vx;
+          p.y += p.vy;
+          p.size += 0.4;
+          p.life -= 0.008;
         }
 
         p.life -= 1 / p.maxLife;

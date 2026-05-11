@@ -195,7 +195,7 @@ export default function Game() {
       const newCount = clickCount + 1;
       setClickCount(newCount);
 
-      // Collect every 20 interactions (slower pace)
+        // Collect every 20 interactions (slower pace)
       // Last 2 items require 'theme_complete' discovery (collect all first 5)
       if (newCount % 20 === 0) {
         const baseIndex = Math.floor(((newCount - 1) / 20)) % theme.collectibleEmojis.length;
@@ -208,6 +208,12 @@ export default function Game() {
         setCollection(updated);
         setShowCollect({ emoji, x: event.x, y: event.y });
         setTimeout(() => setShowCollect(null), 1500);
+
+        // Show collectible fusion hint
+        const effectName = theme.collectibles[emojiIndex];
+        setTimeout(() => {
+          showDiscovery(`${emoji} ${effectName}已融入烟花！`);
+        }, 1600);
 
         // Discovery: collector (20 items total)
         const totalItems = Object.values(updated.collected).reduce((s, c) => s + c, 0);
@@ -279,6 +285,7 @@ export default function Game() {
       <ParticleCanvas
         theme={theme}
         growth={growth}
+        collection={collection}
         onGesture={handleGesture}
         onChargeStart={() => {
           audioRef.current?.init();
