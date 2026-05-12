@@ -122,6 +122,14 @@ export default function Index() {
         {selectedId ? '开始治愈之旅 ✨' : '请选择一个主题'}
       </button>
 
+      {/* Garden button */}
+      <button
+        onClick={() => navigate('/garden')}
+        className="z-10 mt-4 px-5 py-2 rounded-full text-xs bg-white/5 text-white/40 border border-white/10 hover:bg-white/10 hover:text-white/60 transition-all duration-300"
+      >
+        查看花园
+      </button>
+
       {/* Continue hint */}
       {selectedId && getCollection(selectedId).totalClicks > 0 && (
         <p className="text-white/30 text-xs mt-3 z-10">

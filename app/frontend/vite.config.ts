@@ -55,6 +55,7 @@ export default defineConfig(({ command }) => {
     },
     server: {
       host: '0.0.0.0', // Listen on all network interfaces.
+      allowedHosts: 'all',
       port: parseInt(process.env.VITE_PORT || '3003'),
       proxy: {
         '/api': {

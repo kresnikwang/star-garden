@@ -18,6 +18,7 @@ import {
   isGestureUnlocked,
 } from '@/lib/growth-system';
 import type { GrowthState } from '@/lib/growth-system';
+import { checkComboStatus } from '@/lib/combo-effects';
 
 export default function Game() {
   const navigate = useNavigate();
@@ -97,6 +98,10 @@ export default function Game() {
         case 'tap': {
           // Use Y-position to map to 14 notes for richer sound
           audioRef.current?.playNoteByPosition(theme, event.y, window.innerHeight);
+          // Audio linkage: collectible sound layers
+          if (Object.keys(collection.collected).length > 0) {
+            audioRef.current?.playCollectibleLayers(theme, collection.collected);
+          }
           xpGain = 1;
           break;
         }
@@ -128,6 +133,10 @@ export default function Game() {
           // Stop charge sound and play explosion
           audioRef.current?.stopChargeSound();
           audioRef.current?.playExplosionSound(theme);
+          // Audio linkage: collectible sound layers on explosion
+          if (Object.keys(collection.collected).length > 0) {
+            audioRef.current?.playCollectibleLayers(theme, collection.collected);
+          }
           break;
         }
         case 'circle': {
@@ -155,12 +164,27 @@ export default function Game() {
           xpGain = 8;
           updatedGrowth.totalCombos += 1;
           audioRef.current?.playExplosionSound(theme);
+          if (Object.keys(collection.collected).length > 0) {
+            audioRef.current?.playCollectibleLayers(theme, collection.collected);
+          }
+          // Check for combo tier sound
+          const tripleCombo = checkComboStatus(themeId, collection.collected);
+          if (tripleCombo) {
+            audioRef.current?.playComboSound(theme, tripleCombo.tier);
+          }
           break;
         }
         case 'combo_circle_pinch': {
           xpGain = 10;
           updatedGrowth.totalCombos += 1;
           audioRef.current?.playExplosionSound(theme);
+          if (Object.keys(collection.collected).length > 0) {
+            audioRef.current?.playCollectibleLayers(theme, collection.collected);
+          }
+          const circleCombo = checkComboStatus(themeId, collection.collected);
+          if (circleCombo) {
+            audioRef.current?.playComboSound(theme, circleCombo.tier);
+          }
           break;
         }
         case 'combo_dual_press': {
@@ -214,6 +238,23 @@ export default function Game() {
         setTimeout(() => {
           showDiscovery(`${emoji} ${effectName}已融入烟花！`);
         }, 1600);
+
+        // Check for combo tier unlocks
+        const comboStatus = checkComboStatus(themeId, updated.collected);
+        const prevCombo = checkComboStatus(themeId, collection.collected);
+        if (comboStatus && comboStatus.tier === 'base' && (!prevCombo || prevCombo.tier !== 'base')) {
+          // Just unlocked base combo (5 unique items)
+          setTimeout(() => {
+            showDiscovery('组合特效已解锁！烟花将展现主题华彩！');
+            audioRef.current?.playComboSound(theme, 'base');
+          }, 3200);
+        } else if (comboStatus && comboStatus.tier === 'ultimate' && (!prevCombo || prevCombo.tier !== 'ultimate')) {
+          // Just unlocked ultimate combo (7 unique items)
+          setTimeout(() => {
+            showDiscovery('终极特效已解锁！集齐所有道具，烟花大师！');
+            audioRef.current?.playComboSound(theme, 'ultimate');
+          }, 3200);
+        }
 
         // Discovery: collector (20 items total)
         const totalItems = Object.values(updated.collected).reduce((s, c) => s + c, 0);
@@ -341,6 +382,13 @@ export default function Game() {
             </div>
           </div>
           <div className="flex gap-2">
+            <button
+              onClick={() => navigate('/garden')}
+              className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white/80 hover:bg-white/20 transition-colors text-sm"
+              title="我的花园"
+            >
+              🌿
+            </button>
             <button
               onClick={() => setShowBreathing(true)}
               className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white/80 hover:bg-white/20 transition-colors text-sm"

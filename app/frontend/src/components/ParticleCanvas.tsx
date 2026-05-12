@@ -8,6 +8,12 @@ import {
   calculateMixChance,
   getCollectibleTypePriority,
 } from '@/lib/collectible-effects';
+import {
+  checkComboStatus,
+  generateComboParticles,
+  getComboTriggerChance,
+} from '@/lib/combo-effects';
+import type { ComboParticleType } from '@/lib/combo-effects';
 
 type SwipeDirection = 'up' | 'down' | 'left' | 'right';
 
@@ -22,7 +28,8 @@ interface Particle {
   size: number;
   type:
     | 'firework' | 'trail' | 'meteor' | 'ambient' | 'swipe' | 'charge' | 'nebula' | 'petal' | 'lighttrail' | 'sparkle' | 'starfield' | 'groundglow' | 'echo' | 'floater'
-    | CollectibleParticleType;
+    | CollectibleParticleType
+    | ComboParticleType;
   rotation: number;
   rotationSpeed: number;
   orbitAngle?: number;
@@ -333,6 +340,34 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
               }))
             );
           }
+        }
+
+        // ── Combo effect trigger ──────────────────────────────────────
+        const comboStatus = checkComboStatus(themeRef.current.id, coll.collected);
+        if (comboStatus && Math.random() < getComboTriggerChance(comboStatus.tier)) {
+          const comboParticles = generateComboParticles(
+            themeRef.current.id, comboStatus.tier, x, y
+          );
+          newParticles.push(
+            ...comboParticles.map((cp) => ({
+              x: cp.x,
+              y: cp.y,
+              vx: cp.vx,
+              vy: cp.vy,
+              life: cp.life,
+              maxLife: cp.maxLife,
+              color: cp.color,
+              size: cp.size,
+              type: cp.type as Particle['type'],
+              rotation: cp.rotation,
+              rotationSpeed: cp.rotationSpeed,
+              orbitAngle: cp.orbitAngle,
+              orbitRadius: cp.orbitRadius,
+              orbitSpeed: cp.orbitSpeed,
+              breathPhase: cp.breathPhase,
+              breathSpeed: cp.breathSpeed,
+            }))
+          );
         }
       }
 
@@ -1672,6 +1707,90 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
         return;
       }
 
+      // ── combo particle types ─────────────────────────────────────────
+      if (p.type === 'combo_vortex') {
+        const breath = p.breathPhase != null
+          ? 0.8 + 0.2 * Math.sin(((p.maxLife - p.maxLife * p.life) / 60) * (p.breathSpeed || 2))
+          : 1;
+        drawGlow(0, 0, p.size * 4 * breath, p.color, 0.5);
+        ctx.globalAlpha = alpha * breath;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(0, 0, p.size * breath, 0, Math.PI * 2);
+        ctx.fill();
+        // Inner bright core
+        ctx.globalAlpha = alpha * 0.6;
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.arc(0, 0, p.size * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        return;
+      }
+
+      if (p.type === 'combo_wave') {
+        const phase = (p.breathPhase || 0) + ((p.maxLife - p.maxLife * p.life) / 60) * (p.breathSpeed || 3);
+        const pulse = 0.7 + 0.3 * Math.sin(phase);
+        drawGlow(0, 0, p.size * 3 * pulse, p.color, 0.5);
+        ctx.globalAlpha = alpha * pulse;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(0, 0, p.size * pulse, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        return;
+      }
+
+      if (p.type === 'combo_star') {
+        const phase = (p.breathPhase || 0) + ((p.maxLife - p.maxLife * p.life) / 60) * (p.breathSpeed || 2);
+        const pulse = 0.8 + 0.2 * Math.sin(phase);
+        // Large glow
+        drawGlow(0, 0, p.size * 6 * pulse, p.color, 0.6);
+        // Star shape
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = p.color;
+        const spikes = 6;
+        const outerR = p.size * pulse;
+        const innerR = outerR * 0.5;
+        ctx.save();
+        ctx.rotate(p.rotation);
+        ctx.beginPath();
+        for (let i = 0; i < spikes * 2; i++) {
+          const r = i % 2 === 0 ? outerR : innerR;
+          const angle = (Math.PI * i) / spikes - Math.PI / 2;
+          if (i === 0) ctx.moveTo(Math.cos(angle) * r, Math.sin(angle) * r);
+          else ctx.lineTo(Math.cos(angle) * r, Math.sin(angle) * r);
+        }
+        ctx.closePath();
+        ctx.fill();
+        // White core
+        ctx.fillStyle = '#FFFFFF';
+        ctx.globalAlpha = alpha * 0.8;
+        ctx.beginPath();
+        ctx.arc(0, 0, p.size * 0.35, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        return;
+      }
+
+      if (p.type === 'combo_ring') {
+        const progress = 1 - p.life;
+        const ringSize = p.size + progress * 80; // expanding ring
+        ctx.strokeStyle = p.color;
+        ctx.globalAlpha = alpha * 0.5 * (1 - progress);
+        ctx.lineWidth = 2.5 - progress * 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, ringSize, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        return;
+      }
+
       // ── firework / charge / nebula / swipe / trail / sparkle / etc. ───
       const glowMult = p.type === 'charge' ? 4 : p.type === 'nebula' ? 3 : 2;
       const glowAlpha = p.type === 'charge' ? 0.6 : 0.45;
@@ -2104,6 +2223,35 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
           p.y += p.vy;
           p.size += 0.4;
           p.life -= 0.008;
+        } else if (p.type === 'combo_vortex') {
+          // Spiral outward with orbit
+          if (p.orbitAngle != null && p.orbitRadius != null && p.orbitSpeed != null) {
+            p.orbitAngle += p.orbitSpeed;
+            p.orbitRadius += 0.15;
+            p.x += p.vx * 0.3 + Math.cos(p.orbitAngle) * p.orbitRadius * 0.08;
+            p.y += p.vy * 0.3 + Math.sin(p.orbitAngle) * p.orbitRadius * 0.08;
+          } else {
+            p.x += p.vx;
+            p.y += p.vy;
+          }
+          p.vx *= 0.985;
+          p.vy *= 0.985;
+          p.rotation += p.rotationSpeed;
+          p.life -= 0.003;
+        } else if (p.type === 'combo_wave') {
+          // Pulsating outward movement
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vx *= 0.98;
+          p.vy *= 0.98;
+          p.life -= 0.004;
+        } else if (p.type === 'combo_star') {
+          // Central star: stays in place, rotates, breathes
+          p.rotation += p.rotationSpeed;
+          p.life -= 0.003;
+        } else if (p.type === 'combo_ring') {
+          // Expanding ring: handled in render (size grows based on progress)
+          p.life -= 0.012;
         }
 
         p.life -= 1 / p.maxLife;

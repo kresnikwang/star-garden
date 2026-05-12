@@ -1,4 +1,43 @@
 import { ThemeConfig } from './themes';
+import type { ComboTier } from './combo-effects';
+
+// Audio layer categories for collectible sound linkage
+type AudioLayerType = 'bell' | 'water' | 'wind' | 'fire' | 'nature' | 'creature' | 'crystal';
+
+const COLLECTIBLE_AUDIO_MAP: Record<string, AudioLayerType> = {
+  // Spring
+  '\u{1F338}': 'nature',  // 樱花瓣
+  '\u{1F33A}': 'nature',  // 花蕊
+  '\u{1F98B}': 'creature', // 蝴蝶
+  '\u{1F4A7}': 'water',   // 露珠
+  '\u{1F490}': 'nature',  // 花环
+  '\u{1F343}': 'wind',    // 春风
+  '\u{1F331}': 'nature',  // 新芽
+  // Summer
+  '\u2728': 'crystal',    // 萤火虫
+  '\u2B50': 'crystal',    // 海星
+  '\u{1F41A}': 'water',   // 贝壳
+  '\u{1FAB8}': 'water',   // 珊瑚
+  '\u{1FABC}': 'creature', // 水母
+  '\u{1F30A}': 'water',   // 海浪
+  '\u{1F965}': 'nature',  // 椰子
+  // Autumn
+  '\u{1F341}': 'wind',    // 枫叶
+  '\u{1F330}': 'nature',  // 松果
+  '\u{1FAD2}': 'nature',  // 橡果
+  '\u{1F344}': 'nature',  // 蘑菇
+  '\u{1F383}': 'fire',    // 南瓜
+  '\u{1F305}': 'fire',    // 落日
+  '\u{1F375}': 'water',   // 暖茶
+  // Winter
+  '\u2744\uFE0F': 'crystal', // 雪花
+  '\u{1F48E}': 'crystal',    // 冰晶
+  '\u{1F30C}': 'crystal',    // 极光
+  '\u26C4': 'wind',          // 雪人
+  '\u{1F514}': 'bell',       // 铃铛
+  '\u{1F31F}': 'crystal',    // 星光
+  '\u{1F525}': 'fire',       // 暖炉
+};
 
 export class AudioEngine {
   private ctx: AudioContext | null = null;
@@ -559,6 +598,266 @@ export class AudioEngine {
       this.melodyGain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 1);
     }
     this.isPlaying = false;
+  }
+
+  // ── Collectible Audio Linkage ──────────────────────────────────────────
+  // Play subtle sound layers based on collected items during fireworks
+
+  playCollectibleLayers(theme: ThemeConfig, collected: Record<string, number>): void {
+    if (!this.ctx || !this.masterGain) {
+      this.init();
+    }
+    this.resume();
+
+    const ctx = this.ctx!;
+    // Group collected items by audio layer type
+    const layerCounts: Record<AudioLayerType, number> = {
+      bell: 0, water: 0, wind: 0, fire: 0, nature: 0, creature: 0, crystal: 0,
+    };
+
+    for (const [emoji, count] of Object.entries(collected)) {
+      if (count > 0 && COLLECTIBLE_AUDIO_MAP[emoji]) {
+        layerCounts[COLLECTIBLE_AUDIO_MAP[emoji]] += count;
+      }
+    }
+
+    const baseFreq = theme.pentatonicScale[Math.floor(theme.pentatonicScale.length / 2)];
+
+    // Bell layer: high sine with fast decay
+    if (layerCounts.bell > 0) {
+      const vol = Math.min(Math.log(layerCounts.bell + 1) * 0.03, 0.08);
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 1200 + Math.random() * 400;
+      gain.gain.setValueAtTime(vol, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+      osc.connect(gain);
+      gain.connect(this.masterGain!);
+      osc.start(ctx.currentTime + 0.05);
+      osc.stop(ctx.currentTime + 0.55);
+    }
+
+    // Water layer: filtered noise burst with downward pitch
+    if (layerCounts.water > 0) {
+      const vol = Math.min(Math.log(layerCounts.water + 1) * 0.025, 0.06);
+      const bufSize = Math.floor(ctx.sampleRate * 0.3);
+      const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < bufSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.08));
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(2000, ctx.currentTime);
+      filter.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.25);
+      filter.Q.value = 3;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(vol, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+      src.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.masterGain!);
+      src.start(ctx.currentTime + 0.02);
+      src.stop(ctx.currentTime + 0.35);
+    }
+
+    // Wind layer: band-pass filtered noise with slow attack
+    if (layerCounts.wind > 0) {
+      const vol = Math.min(Math.log(layerCounts.wind + 1) * 0.02, 0.05);
+      const bufSize = Math.floor(ctx.sampleRate * 0.6);
+      const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < bufSize; i++) {
+        const env = Math.sin((i / bufSize) * Math.PI); // bell envelope
+        data[i] = (Math.random() * 2 - 1) * env;
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.value = 800 + Math.random() * 400;
+      filter.Q.value = 1.5;
+      const gain = ctx.createGain();
+      gain.gain.value = vol;
+      src.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.masterGain!);
+      src.start(ctx.currentTime + 0.03);
+      src.stop(ctx.currentTime + 0.65);
+    }
+
+    // Fire layer: low crackle
+    if (layerCounts.fire > 0) {
+      const vol = Math.min(Math.log(layerCounts.fire + 1) * 0.025, 0.06);
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.value = 80 + Math.random() * 40;
+      gain.gain.setValueAtTime(vol, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+      const distort = ctx.createWaveShaperNode ? ctx.createWaveShaperNode() : null;
+      osc.connect(gain);
+      gain.connect(this.masterGain!);
+      osc.start(ctx.currentTime + 0.01);
+      osc.stop(ctx.currentTime + 0.35);
+    }
+
+    // Nature layer: soft plucked string (triangle with fast decay)
+    if (layerCounts.nature > 0) {
+      const vol = Math.min(Math.log(layerCounts.nature + 1) * 0.02, 0.06);
+      const noteFreq = baseFreq * (1 + Math.random() * 0.2);
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.value = noteFreq;
+      gain.gain.setValueAtTime(vol, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+      osc.connect(gain);
+      gain.connect(this.masterGain!);
+      osc.start(ctx.currentTime + 0.02);
+      osc.stop(ctx.currentTime + 0.45);
+    }
+
+    // Creature layer: sine with vibrato
+    if (layerCounts.creature > 0) {
+      const vol = Math.min(Math.log(layerCounts.creature + 1) * 0.025, 0.06);
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const vibrato = ctx.createOscillator();
+      const vibratoGain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = baseFreq * 1.5;
+      vibrato.type = 'sine';
+      vibrato.frequency.value = 6;
+      vibratoGain.gain.value = 15;
+      vibrato.connect(vibratoGain);
+      vibratoGain.connect(osc.frequency);
+      gain.gain.setValueAtTime(vol, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+      osc.connect(gain);
+      gain.connect(this.masterGain!);
+      osc.start(ctx.currentTime);
+      vibrato.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.55);
+      vibrato.stop(ctx.currentTime + 0.55);
+    }
+
+    // Crystal layer: detuned pair of high sines (shimmer)
+    if (layerCounts.crystal > 0) {
+      const vol = Math.min(Math.log(layerCounts.crystal + 1) * 0.02, 0.06);
+      const freq = baseFreq * 3;
+      for (let i = 0; i < 2; i++) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq + (i === 0 ? -3 : 3); // slight detune
+        gain.gain.setValueAtTime(vol * 0.6, ctx.currentTime + 0.02 * i);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+        osc.connect(gain);
+        gain.connect(this.masterGain!);
+        osc.start(ctx.currentTime + 0.02 * i);
+        osc.stop(ctx.currentTime + 0.65);
+      }
+    }
+  }
+
+  // ── Combo Sound Effect ──────────────────────────────────────────────
+
+  playComboSound(theme: ThemeConfig, tier: ComboTier): void {
+    if (!this.ctx || !this.masterGain) {
+      this.init();
+    }
+    this.resume();
+
+    const ctx = this.ctx!;
+    const scale = theme.pentatonicScale;
+    const isUltimate = tier === 'ultimate';
+    const volume = isUltimate ? 0.35 : 0.25;
+
+    // Rising arpeggio — plays 5 or 7 notes in quick succession
+    const noteCount = isUltimate ? 7 : 5;
+    const startIndex = Math.floor(scale.length / 2) - Math.floor(noteCount / 2);
+    for (let i = 0; i < noteCount; i++) {
+      const idx = Math.max(0, Math.min(scale.length - 1, startIndex + i));
+      const freq = scale[idx];
+      const delay = i * 0.08;
+
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, ctx.currentTime + delay);
+      gain.gain.linearRampToValueAtTime(volume * 0.5, ctx.currentTime + delay + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + delay + 0.5);
+      osc.connect(gain);
+      gain.connect(this.masterGain!);
+      osc.start(ctx.currentTime + delay);
+      osc.stop(ctx.currentTime + delay + 0.55);
+
+      // Harmonic
+      const h = ctx.createOscillator();
+      const hg = ctx.createGain();
+      h.type = 'triangle';
+      h.frequency.value = freq * 2;
+      hg.gain.setValueAtTime(0, ctx.currentTime + delay);
+      hg.gain.linearRampToValueAtTime(volume * 0.15, ctx.currentTime + delay + 0.02);
+      hg.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + delay + 0.35);
+      h.connect(hg);
+      hg.connect(this.masterGain!);
+      h.start(ctx.currentTime + delay);
+      h.stop(ctx.currentTime + delay + 0.4);
+    }
+
+    // Culminating chord at the end
+    const chordDelay = noteCount * 0.08 + 0.05;
+    const chordFreqs = [
+      scale[Math.floor(scale.length / 2)],
+      scale[Math.floor(scale.length / 2)] * 1.25,
+      scale[Math.floor(scale.length / 2)] * 1.5,
+    ];
+    if (isUltimate) {
+      chordFreqs.push(scale[Math.floor(scale.length / 2)] * 2);
+    }
+    for (const freq of chordFreqs) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, ctx.currentTime + chordDelay);
+      gain.gain.linearRampToValueAtTime(volume * 0.4, ctx.currentTime + chordDelay + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + chordDelay + 1.2);
+      osc.connect(gain);
+      gain.connect(this.masterGain!);
+      osc.start(ctx.currentTime + chordDelay);
+      osc.stop(ctx.currentTime + chordDelay + 1.3);
+    }
+
+    // Shimmer noise for ultimate
+    if (isUltimate) {
+      const bufSize = Math.floor(ctx.sampleRate * 0.8);
+      const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < bufSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.3));
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'highpass';
+      filter.frequency.value = 3000;
+      filter.Q.value = 0.5;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.08, ctx.currentTime + chordDelay);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + chordDelay + 0.8);
+      src.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.masterGain!);
+      src.start(ctx.currentTime + chordDelay);
+      src.stop(ctx.currentTime + chordDelay + 0.85);
+    }
   }
 
   destroy(): void {
