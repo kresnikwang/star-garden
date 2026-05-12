@@ -1,7 +1,12 @@
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { HashRouter, BrowserRouter, Routes, Route } from 'react-router-dom';
+
+// Use HashRouter for static hosting compatibility (e.g. Mule Pages)
+// BrowserRouter requires server-side fallback for SPA routes
+const useHash = window.location.hostname.includes('.mule.page') || window.location.hash.startsWith('#');
+const Router = useHash ? HashRouter : BrowserRouter;
 import BlogRoutes from './blog-routes';
 import Index from './pages/Index';
 import Game from './pages/Game';
@@ -32,9 +37,9 @@ const App = () => (
     {/* MODULE_PROVIDERS_END */}
     <TooltipProvider>
       <Toaster />
-      <BrowserRouter>
+      <Router>
         <AppRoutes />
-      </BrowserRouter>
+      </Router>
     </TooltipProvider>
     {/* MODULE_PROVIDERS_CLOSE */}
   </QueryClientProvider>
