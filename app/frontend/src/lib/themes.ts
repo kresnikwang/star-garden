@@ -21,7 +21,7 @@ export const themes: Record<string, ThemeConfig> = {
     description: '\u6536\u96C6\u98D8\u843D\u7684\u6A31\u82B1\u74E3\uFF0C\u7F16\u7EC7\u6625\u5929\u7684\u65CB\u5F8B',
     bgImage: 'https://mgx-backend-cdn.metadl.com/generate/images/1071821/2026-05-08/oeowwjaaagnq/spring-theme-bg.png',
     bgGradient: 'linear-gradient(180deg, #1a1a3e 0%, #2d1b4e 50%, #4a2040 100%)',
-    particleColors: ['#FFB7C5', '#FF69B4', '#FFC0CB', '#FFE4E1', '#F8BBD9', '#FFFFFF'],
+    particleColors: ['#FFB7C5', '#FF69B4', '#FFC0CB', '#FFE4E1', '#F8BBD9', '#FFD0D8'],
     accentColor: '#FFB7C5',
     // Two octaves pentatonic: C4-A4, C5-A5 + extra high notes
     pentatonicScale: [
@@ -40,7 +40,7 @@ export const themes: Record<string, ThemeConfig> = {
     description: '\u6355\u6349\u590F\u591C\u7684\u8424\u706B\u866B\uFF0C\u70B9\u4EAE\u661F\u7A7A',
     bgImage: 'https://mgx-backend-cdn.metadl.com/generate/images/1071821/2026-05-08/oeowx2iaagpq/summer-theme-bg.png',
     bgGradient: 'linear-gradient(180deg, #0a1628 0%, #1a3a4a 50%, #0d4f4f 100%)',
-    particleColors: ['#5DADE2', '#48C9B0', '#F7DC6F', '#82E0AA', '#AED6F1', '#FFFFFF'],
+    particleColors: ['#5DADE2', '#48C9B0', '#F7DC6F', '#82E0AA', '#AED6F1', '#B3D9F0'],
     accentColor: '#48C9B0',
     // Two octaves: G3-E4, G4-E5 + high
     pentatonicScale: [
@@ -59,7 +59,7 @@ export const themes: Record<string, ThemeConfig> = {
     description: '\u6536\u96C6\u91D1\u8272\u67AB\u53F6\uFF0C\u8C31\u5199\u79CB\u65E5\u6696\u6B4C',
     bgImage: 'https://mgx-backend-cdn.metadl.com/generate/images/1071821/2026-05-08/oeowv6iaagpa/autumn-theme-bg.png',
     bgGradient: 'linear-gradient(180deg, #1a0a2e 0%, #3d1f0a 50%, #5c2d0a 100%)',
-    particleColors: ['#E74C3C', '#F39C12', '#F1C40F', '#E67E22', '#D35400', '#FFFFFF'],
+    particleColors: ['#E74C3C', '#F39C12', '#F1C40F', '#E67E22', '#D35400', '#FFDBA8'],
     accentColor: '#F39C12',
     // Two octaves: D3-C4, D4-C5 + high
     pentatonicScale: [
@@ -78,7 +78,7 @@ export const themes: Record<string, ThemeConfig> = {
     description: '\u6536\u96C6\u96EA\u82B1\u7ED3\u6676\uFF0C\u5524\u9192\u6781\u5149\u4E4B\u821E',
     bgImage: 'https://mgx-backend-cdn.metadl.com/generate/images/1071821/2026-05-08/oeowtlaaagoq/winter-theme-bg.png',
     bgGradient: 'linear-gradient(180deg, #0a0a2e 0%, #1a2a4a 50%, #0a3a5a 100%)',
-    particleColors: ['#AED6F1', '#D5DBDB', '#85C1E9', '#D6EAF8', '#EBF5FB', '#FFFFFF'],
+    particleColors: ['#AED6F1', '#D5DBDB', '#85C1E9', '#D6EAF8', '#EBF5FB', '#D6EFF5'],
     accentColor: '#AED6F1',
     // Two octaves: C3-A3, C4-A4 + high
     pentatonicScale: [

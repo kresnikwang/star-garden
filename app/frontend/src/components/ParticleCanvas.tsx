@@ -778,15 +778,21 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
     const dy = y2 - y1;
     const dist = Math.sqrt(dx * dx + dy * dy);
     const steps = Math.floor(dist / 8);
+    // Perpendicular unit vector (rotated 90°)
+    const perpX = dist > 0 ? -dy / dist : 0;
+    const perpY = dist > 0 ? dx / dist : 0;
+    const spread = Math.max(12, dist * 0.15); // at least 12px, scales with bridge length
 
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
       const px = x1 + dx * t;
       const py = y1 + dy * t;
       for (let j = 0; j < 2; j++) {
+        // Random offset perpendicular to bridge direction, not screen axes
+        const offset = (Math.random() - 0.5) * spread;
         newParticles.push({
-          x: px + (Math.random() - 0.5) * 6,
-          y: py + (Math.random() - 0.5) * 6,
+          x: px + perpX * offset + (Math.random() - 0.5) * 3,
+          y: py + perpY * offset + (Math.random() - 0.5) * 3,
           vx: (Math.random() - 0.5) * 0.3,
           vy: (Math.random() - 0.5) * 0.3,
           life: 1,
