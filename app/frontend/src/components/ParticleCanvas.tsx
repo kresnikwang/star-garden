@@ -1504,7 +1504,7 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
         ctx.ellipse(0, 0, p.size * 0.6, p.size, 0, 0, Math.PI * 2);
         ctx.fill();
         // Inner highlight
-        ctx.globalAlpha = alpha * 0.5;
+        ctx.globalAlpha = alpha * 0.1;
         ctx.fillStyle = '#FFFFFF';
         ctx.beginPath();
         ctx.ellipse(0, -p.size * 0.2, p.size * 0.2, p.size * 0.4, 0, 0, Math.PI * 2);
