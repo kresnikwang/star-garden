@@ -39,7 +39,8 @@ export default function Game() {
   );
   const [growth, setGrowth] = useState<GrowthState>(() => getGrowthState(themeId));
   const [clickCount, setClickCount] = useState(0);
-  const [showCollect, setShowCollect] = useState<{ emoji: string; x: number; y: number } | null>(null);
+  const [nextCollectIn, setNextCollectIn] = useState(0);
+  const [showCollect, setShowCollect] = useState<{ emoji: string; x: number; y: number; name: string } | null>(null);
   const [melodyActive, setMelodyActive] = useState(false);
   const [showUI, setShowUI] = useState(true);
   const [showBreathing, setShowBreathing] = useState(false);
@@ -263,10 +264,16 @@ export default function Game() {
       const newCount = clickCount + 1;
       setClickCount(newCount);
 
-        // Collect every 20 interactions (slower pace)
+      // Count how many unique collectibles earned this session (for interval calc)
+      const collectedCount = Object.values(collection.collected).filter(c => c > 0).length;
+      // Interval scales with progress: first 5 at 40, last 2 at 60
+      const collectInterval = collectedCount < 5 ? 40 : 60;
+      // Update progress bar
+      setNextCollectIn(collectInterval - (newCount % collectInterval));
+
       // Last 2 items require 'theme_complete' discovery (collect all first 5)
-      if (newCount % 20 === 0) {
-        const baseIndex = Math.floor(((newCount - 1) / 20)) % theme.collectibleEmojis.length;
+      if (newCount % collectInterval === 0) {
+        const baseIndex = Math.floor(((newCount - 1) / collectInterval)) % theme.collectibleEmojis.length;
         const maxIndex = afterXP.hiddenDiscoveries.includes('theme_complete')
           ? theme.collectibleEmojis.length
           : 5;
@@ -277,11 +284,12 @@ export default function Game() {
         // Track collection for achievements
         const unlocked = trackCollection(1);
         if (unlocked.length) setAchieveStats(getCompletionStats());
-        setShowCollect({ emoji, x: event.x, y: event.y });
-        setTimeout(() => setShowCollect(null), 1500);
+        const effectName = theme.collectibles[emojiIndex];
+        setShowCollect({ emoji, x: window.innerWidth / 2, y: window.innerHeight / 2 - 60, name: effectName });
+        setTimeout(() => setShowCollect(null), 2500);
+        setNextCollectIn(0);
 
         // Show collectible fusion hint
-        const effectName = theme.collectibles[emojiIndex];
         setTimeout(() => {
           showDiscovery(`${emoji} ${effectName}已融入烟花！`);
         }, 1600);
@@ -508,6 +516,30 @@ export default function Game() {
         )}
 
         {/* Collection display */}
+        {/* Progress toward next collectible */}
+        {(() => {
+          const collectedCount = Object.values(collection.collected).filter(c => c > 0).length;
+          const collectInterval = collectedCount < 5 ? 40 : 60;
+          const collected = Object.values(collection.collected).reduce((s, c) => s + c, 0);
+          const maxCollect = theme.collectibleEmojis.length;
+          if (collected >= maxCollect) return null;
+          const progress = nextCollectIn > 0 ? (collectInterval - nextCollectIn) / collectInterval : 1;
+          return (
+            <div className="mb-3 px-4">
+              <div className="flex justify-between text-[10px] text-white/30 mb-1">
+                <span>下一个道具</span>
+                <span>{nextCollectIn > 0 ? `还差 ${nextCollectIn} 次` : '即将获得'}</span>
+              </div>
+              <div className="h-1 bg-white/10 rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-300"
+                  style={{ width: `${progress * 100}%`, backgroundColor: theme.accentColor }}
+                />
+              </div>
+            </div>
+          );
+        })()}
+
         <div className="flex justify-center gap-2 mt-3 flex-wrap">
           {theme.collectibleEmojis.map((emoji, i) => (
             <span
@@ -553,13 +585,31 @@ export default function Game() {
       )}
 
       {/* Collectible popup */}
+      {/* Collection milestone popup */}
       {showCollect && (
-        <div
-          className="fixed z-20 pointer-events-none animate-bounce"
-          style={{ left: showCollect.x - 20, top: showCollect.y - 40 }}
-        >
-          <div className="text-4xl animate-pulse">{showCollect.emoji}</div>
-          <p className="text-white/80 text-xs text-center mt-1">+1</p>
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center pointer-events-none">
+          <div
+            className="flex flex-col items-center animate-[spin_8s_linear_infinite]"
+            style={{
+              animation: 'spin 8s linear infinite',
+            }}
+          >
+            {/* Glow ring behind emoji */}
+            <div
+              className="absolute w-32 h-32 rounded-full animate-pulse"
+              style={{ background: `radial-gradient(circle, ${theme.accentColor}30 0%, transparent 70%)` }}
+            />
+            {/* Emoji */}
+            <div className="text-7xl relative z-10 animate-bounce" style={{ animationDuration: '0.6s' }}>
+              {showCollect.emoji}
+            </div>
+            {/* Name */}
+            <div className="mt-3 text-white/90 text-sm font-medium tracking-widest bg-white/10 backdrop-blur-md rounded-full px-4 py-1.5 border border-white/20">
+              {showCollect.name}
+            </div>
+            {/* Label */}
+            <div className="mt-2 text-white/50 text-xs">已融入烟花</div>
+          </div>
         </div>
       )}
 
