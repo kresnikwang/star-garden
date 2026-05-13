@@ -114,10 +114,10 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
     sc.height = diameter;
     const sctx = sc.getContext('2d')!;
     const cx = diameter / 2;
-    const grad = sctx.createRadialGradient(cx, cx, 0, cx, cx, r);
-    grad.addColorStop(0,   color);               // opaque core
-    grad.addColorStop(0.4, color);               // hold color a bit
-    grad.addColorStop(1,   'rgba(0,0,0,0)');     // transparent edge
+    const grad = sctx.createRadialGradient(cx, cx, r * 0.15, cx, cx, r);
+    grad.addColorStop(0,   'rgba(0,0,0,0)');           // transparent center — no white hotspot
+    grad.addColorStop(0.55, color);                     // color ring starts
+    grad.addColorStop(1,   'rgba(0,0,0,0)');           // transparent edge
     sctx.fillStyle = grad;
     sctx.beginPath();
     sctx.arc(cx, cx, r, 0, Math.PI * 2);
