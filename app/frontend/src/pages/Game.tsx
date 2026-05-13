@@ -19,6 +19,14 @@ import {
 } from '@/lib/growth-system';
 import type { GrowthState } from '@/lib/growth-system';
 import { checkComboStatus } from '@/lib/combo-effects';
+import {
+  trackGesture,
+  trackCombo,
+  trackCollection,
+  updateStreak,
+  getCompletionStats,
+  triggerAchievement,
+} from '@/lib/achievement-store';
 
 export default function Game() {
   const navigate = useNavigate();
@@ -39,6 +47,8 @@ export default function Game() {
   const [levelUpMsg, setLevelUpMsg] = useState<string | null>(null);
   const [unlockMsg, setUnlockMsg] = useState<string | null>(null);
   const [discoveryMsg, setDiscoveryMsg] = useState<string | null>(null);
+  const [achieveMsg, setAchieveMsg] = useState<string | null>(null);
+  const [achieveStats, setAchieveStats] = useState(() => getCompletionStats());
 
   const audioRef = useRef<AudioEngine | null>(null);
   const melodyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -46,12 +56,19 @@ export default function Game() {
   // Initialize audio engine
   useEffect(() => {
     audioRef.current = new AudioEngine();
+    // Track daily streak on game start
+    updateStreak();
+    setAchieveStats(getCompletionStats());
     return () => {
       audioRef.current?.destroy();
     };
   }, []);
 
-  // Start melody after 30 seconds of play
+  // Track level achievements
+  useEffect(() => {
+    if (growth.level >= 5) triggerAchievement('level_5');
+    if (growth.level >= 10) triggerAchievement('level_10');
+  }, [growth.level]);
   useEffect(() => {
     if (clickCount >= 5 && !melodyActive) {
       melodyTimerRef.current = setTimeout(() => {
@@ -195,6 +212,33 @@ export default function Game() {
         }
       }
 
+      // ── Achievement tracking ─────────────────────────────────────────────
+      const newAchieve = trackGesture(); // always count as gesture
+      if (event.type === 'tap') {
+        const u = triggerAchievement('first_firework');
+        if (u.length) showDiscovery('🎆 成就解锁：初见烟火');
+      } else if (event.type === 'swipe') {
+        const u = triggerAchievement('first_swipe');
+        if (u.length) showDiscovery('💫 成就解锁：轻扫流星');
+      } else if (event.type === 'longpress') {
+        const u = triggerAchievement('first_long_press');
+        if (u.length) showDiscovery('⏳ 成就解锁：长情陪伴');
+      } else if (event.type === 'pinch') {
+        const u = triggerAchievement('first_pinch');
+        if (u.length) showDiscovery('🤏 成就解锁：天地之间');
+      } else if (event.type === 'combo_triple_tap') {
+        trackCombo();
+        const u = triggerAchievement('first_triple_tap');
+        if (u.length) showDiscovery('🌸 成就解锁：三重绽放');
+      } else if (event.type === 'combo_dual_press') {
+        trackCombo();
+        const u = triggerAchievement('first_dual_press');
+        if (u.length) showDiscovery('🔗 成就解锁：双指连线');
+      } else if (event.type === 'combo_circle_pinch') {
+        trackCombo();
+      }
+      if (newAchieve.length) setAchieveStats(getCompletionStats());
+
       // Discovery: combo master (5 combos)
       if (updatedGrowth.totalCombos >= 5 && !updatedGrowth.hiddenDiscoveries.includes('combo_master')) {
         updatedGrowth = discoverHidden(themeId, updatedGrowth, 'combo_master');
@@ -230,6 +274,9 @@ export default function Game() {
         const emoji = theme.collectibleEmojis[emojiIndex];
         const updated = addCollectible(collection, emoji);
         setCollection(updated);
+        // Track collection for achievements
+        const unlocked = trackCollection(1);
+        if (unlocked.length) setAchieveStats(getCompletionStats());
         setShowCollect({ emoji, x: event.x, y: event.y });
         setTimeout(() => setShowCollect(null), 1500);
 
@@ -394,6 +441,18 @@ export default function Game() {
               className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white/80 hover:bg-white/20 transition-colors text-sm"
             >
               🧘
+            </button>
+            <button
+              onClick={() => navigate('/achievements')}
+              className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white/80 hover:bg-white/20 transition-colors relative"
+              title="成就"
+            >
+              🏆
+              {achieveStats.unlocked > 0 && (
+                <span className="absolute -top-1 -right-1 bg-purple-500 text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center leading-none">
+                  {achieveStats.unlocked}
+                </span>
+              )}
             </button>
             <button
               onClick={() => setShowShare(true)}

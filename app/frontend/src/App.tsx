@@ -13,8 +13,7 @@ import Game from './pages/Game';
 import Garden from './pages/Garden';
 import AuthCallback from './pages/AuthCallback';
 import AuthError from './pages/AuthError';
-// MODULE_IMPORTS_START
-// MODULE_IMPORTS_END
+import Achievements from './pages/Achievements';
 
 const queryClient = new QueryClient();
 
@@ -26,8 +25,7 @@ const AppRoutes = () => (
     {/* <Route path="/blog/*" element={<BlogRoutes />} /> */}
     <Route path="/auth/callback" element={<AuthCallback />} />
     <Route path="/auth/error" element={<AuthError />} />
-    {/* MODULE_ROUTES_START */}
-    {/* MODULE_ROUTES_END */}
+    <Route path="/achievements" element={<Achievements />} />
   </Routes>
 );
 
