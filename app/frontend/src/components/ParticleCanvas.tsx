@@ -1497,7 +1497,7 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
       // ── petal ──────────────────────────────────────────────────────────
       if (p.type === 'petal') {
         // Soft glow halo underneath
-        drawGlow(0, 0, p.size * 2.5, p.color, 0.35);
+        drawGlow(0, 0, p.size * 2.5, p.color, 0.15);
         ctx.globalAlpha = alpha;
         ctx.fillStyle = p.color;
         ctx.beginPath();
@@ -1517,7 +1517,7 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
       // ── lighttrail ─────────────────────────────────────────────────────
       if (p.type === 'lighttrail') {
         const length = p.size * 3;
-        drawGlow(length * 0.5, 0, p.size * 3, p.color, 0.4);
+        drawGlow(length * 0.5, 0, p.size * 3, p.color, 0.2);
         ctx.globalAlpha = alpha;
         const gradient = ctx.createLinearGradient(-length, 0, length, 0);
         gradient.addColorStop(0, 'transparent');
@@ -1541,7 +1541,7 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
 
       // ── groundglow ─────────────────────────────────────────────────────
       if (p.type === 'groundglow') {
-        drawGlow(0, 0, p.size * 8, p.color, 0.3);
+        drawGlow(0, 0, p.size * 8, p.color, 0.15);
         ctx.globalAlpha = alpha * 0.4;
         ctx.fillStyle = p.color;
         ctx.beginPath();
@@ -1558,7 +1558,7 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
 
       // ── echo ───────────────────────────────────────────────────────────
       if (p.type === 'echo') {
-        drawGlow(0, 0, p.size * 3.5, p.color, 0.35);
+        drawGlow(0, 0, p.size * 3.5, p.color, 0.15);
         ctx.globalAlpha = alpha * 0.6;
         ctx.fillStyle = p.color;
         ctx.beginPath();
@@ -1571,7 +1571,7 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
 
       // ── floater ────────────────────────────────────────────────────────
       if (p.type === 'floater') {
-        drawGlow(0, 0, p.size * 5, p.color, 0.3);
+        drawGlow(0, 0, p.size * 5, p.color, 0.15);
         ctx.globalAlpha = alpha * 0.5;
         ctx.fillStyle = p.color;
         ctx.beginPath();
@@ -1588,7 +1588,7 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
 
       // ── collectible particle types ────────────────────────────────────
       if (p.type === 'butterfly') {
-        drawGlow(0, 0, p.size * 3, p.color, 0.4);
+        drawGlow(0, 0, p.size * 3, p.color, 0.15);
         ctx.globalAlpha = alpha;
         ctx.fillStyle = p.color;
         ctx.save();
@@ -1792,8 +1792,8 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
       }
 
       // ── firework / charge / nebula / swipe / trail / sparkle / etc. ───
-      const glowMult = p.type === 'charge' ? 3 : p.type === 'nebula' ? 2.5 : 1.5;
-      const glowAlpha = p.type === 'charge' ? 0.35 : 0.25;
+      const glowMult = p.type === 'charge' ? 2.5 : p.type === 'nebula' ? 2 : 1.2;
+      const glowAlpha = p.type === 'charge' ? 0.2 : 0.15;
       drawGlow(0, 0, p.size * glowMult, p.color, glowAlpha);
 
       ctx.globalAlpha = alpha;
