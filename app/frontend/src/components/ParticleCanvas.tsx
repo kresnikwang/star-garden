@@ -1503,11 +1503,11 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
         ctx.beginPath();
         ctx.ellipse(0, 0, p.size * 0.6, p.size, 0, 0, Math.PI * 2);
         ctx.fill();
-        // Inner highlight
-        ctx.globalAlpha = alpha * 0.1;
-        ctx.fillStyle = '#FFFFFF';
+        // Inner highlight (use tint of the petal color, not pure white)
+        ctx.globalAlpha = alpha * 0.25;
+        ctx.fillStyle = p.color;
         ctx.beginPath();
-        ctx.ellipse(0, -p.size * 0.2, p.size * 0.2, p.size * 0.4, 0, 0, Math.PI * 2);
+        ctx.ellipse(0, -p.size * 0.2, p.size * 0.15, p.size * 0.35, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.globalAlpha = 1;
