@@ -781,7 +781,7 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
     // Perpendicular unit vector (rotated 90°)
     const perpX = dist > 0 ? -dy / dist : 0;
     const perpY = dist > 0 ? dx / dist : 0;
-    const spread = Math.max(12, dist * 0.15); // at least 12px, scales with bridge length
+    const spread = Math.max(20, dist * 0.35); // at least 20px, scales with bridge length
 
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
@@ -791,14 +791,14 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
         // Random offset perpendicular to bridge direction, not screen axes
         const offset = (Math.random() - 0.5) * spread;
         newParticles.push({
-          x: px + perpX * offset + (Math.random() - 0.5) * 3,
-          y: py + perpY * offset + (Math.random() - 0.5) * 3,
-          vx: (Math.random() - 0.5) * 0.3,
-          vy: (Math.random() - 0.5) * 0.3,
+          x: px + perpX * offset + (Math.random() - 0.5) * 4,
+          y: py + perpY * offset + (Math.random() - 0.5) * 4,
+          vx: perpX * (Math.random() - 0.3) * 2 + (Math.random() - 0.5) * 0.8,
+          vy: perpY * (Math.random() - 0.3) * 2 + (Math.random() - 0.5) * 0.8,
           life: 1,
           maxLife: 120 + Math.random() * 60,
           color: colors[Math.floor(Math.random() * colors.length)],
-          size: 1.5 + Math.random() * 2,
+          size: 2 + Math.random() * 2.5,
           type: 'ambient',
           rotation: 0,
           rotationSpeed: 0,
