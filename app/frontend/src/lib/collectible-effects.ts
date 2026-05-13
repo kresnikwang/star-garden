@@ -2,7 +2,7 @@ import { ThemeConfig } from './themes';
 
 // Extended particle type for collectible effects
 export type CollectibleParticleType =
-  | 'butterfly' | 'droplet' | 'ring' | 'wind' | 'sprout'
+  | 'butterfly' | 'droplet' | 'ring' | 'wind' | 'sprout' | 'sparkle'
   | 'firefly' | 'starfish' | 'shell' | 'coral' | 'jellyfish' | 'wave'
   | 'maple' | 'pinecone' | 'acorn' | 'spore' | 'ember' | 'sunset' | 'steam'
   | 'snowflake' | 'ice' | 'aurora' | 'snowman' | 'bell' | 'warmth';
@@ -42,7 +42,7 @@ export const springEffects: Record<string, CollectibleEffect> = {
     baseChance: 0.30,
     spawnParticles: (x, y, theme, count) =>
       Array.from({ length: count }, () => ({
-        type: 'wind' as CollectibleParticleType,
+        type: 'petal' as CollectibleParticleType,
         x, y,
         vx: (Math.random() - 0.5) * 2.5,
         vy: Math.random() * 1.2 + 0.4,
@@ -62,7 +62,7 @@ export const springEffects: Record<string, CollectibleEffect> = {
         const angle = Math.random() * Math.PI * 2;
         const speed = Math.random() * 2 + 0.5;
         return {
-          type: 'sprout' as CollectibleParticleType,
+          type: 'sparkle' as CollectibleParticleType,
           x, y,
           vx: Math.cos(angle) * speed,
           vy: Math.sin(angle) * speed,
