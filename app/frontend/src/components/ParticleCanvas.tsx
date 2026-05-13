@@ -1792,8 +1792,8 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
       }
 
       // ── firework / charge / nebula / swipe / trail / sparkle / etc. ───
-      const glowMult = p.type === 'charge' ? 4 : p.type === 'nebula' ? 3 : 2;
-      const glowAlpha = p.type === 'charge' ? 0.6 : 0.45;
+      const glowMult = p.type === 'charge' ? 3 : p.type === 'nebula' ? 2.5 : 1.5;
+      const glowAlpha = p.type === 'charge' ? 0.35 : 0.25;
       drawGlow(0, 0, p.size * glowMult, p.color, glowAlpha);
 
       ctx.globalAlpha = alpha;
