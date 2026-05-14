@@ -145,6 +145,9 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
   const pinchActiveRef = useRef(false);
   const lastPinchCenterRef = useRef<{ x: number; y: number } | null>(null);
 
+  // Combo cooldown guard — prevent re-trigger during animation (~5s at 60fps)
+  const comboCooldownRef = useRef(0);
+
   // Combo tracking
   const lastCircleRef = useRef<{ cx: number; cy: number; radius: number; time: number } | null>(null);
   const tripleTapTrackerRef = useRef<{ x: number; y: number; time: number; count: number }>({ x: 0, y: 0, time: 0, count: 0 });
@@ -341,7 +344,8 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
 
         // ── Combo effect trigger ─────────────────────────────────────────────────────────────────
         const comboStatus = checkComboStatus(themeRef.current.id, coll.collected);
-        if (comboStatus && Math.random() < getComboTriggerChance(comboStatus.tier)) {
+        if (comboStatus && comboCooldownRef.current === 0 && Math.random() < getComboTriggerChance(comboStatus.tier)) {
+          comboCooldownRef.current = 300; // ~5s animation guard
           const comboParticles = generateComboParticles(
             themeRef.current.id, comboStatus.tier, x, y
           );
@@ -2089,6 +2093,9 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
 
     const animate = () => {
       if (!running) return;
+
+      // Decrement combo cooldown each frame
+      if (comboCooldownRef.current > 0) comboCooldownRef.current--;
 
       const w = canvas.width;
       const h = canvas.height;

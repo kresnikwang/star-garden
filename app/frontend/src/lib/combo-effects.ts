@@ -58,12 +58,12 @@ export interface ComboParticle {
 // ── Combo probability per firework ───────────────────────────────────
 
 export function getComboTriggerChance(tier: ComboTier): number {
-  return tier === 'ultimate' ? 0.50 : 0.30;
+  return tier === 'ultimate' ? 0.25 : 0.10;
 }
 
 // ── Helper: add a glowing outer ring to any combo ──────────────────────
 function addOrbitalRing(base: ComboParticle[], x: number, y: number, theme: ThemeConfig, colorIdx: number) {
-  const ringCount = 8; // reduced from 12
+  const ringCount = 6; // reduced from 8
   const ringColor = theme.particleColors[colorIdx % theme.particleColors.length];
   for (let i = 0; i < ringCount; i++) {
     const angle = (Math.PI * 2 * i) / ringCount;
@@ -87,8 +87,8 @@ function addOrbitalRing(base: ComboParticle[], x: number, y: number, theme: Them
 }
 
 function addCometTrail(base: ComboParticle[], x: number, y: number, theme: ThemeConfig) {
-  // 10 slow-moving comet particles with trail effect (reduced from 15)
-  for (let i = 0; i < 10; i++) {
+  // 8 slow-moving comet particles with trail effect (reduced from 10)
+  for (let i = 0; i < 8; i++) {
     const angle = Math.random() * Math.PI * 2;
     const speed = 0.3 + Math.random() * 0.7;
     base.push({
@@ -177,8 +177,8 @@ function springUltimateCombo(x: number, y: number, theme: ThemeConfig): ComboPar
       rotation: 0, rotationSpeed: 0,
     });
   }
-  // Extra 20 burst particles (fast radial) — reduced from 40
-  for (let i = 0; i < 20; i++) {
+  // Extra 12 burst particles (fast radial) — reduced from 20
+  for (let i = 0; i < 12; i++) {
     const angle = (Math.PI * 2 * i) / 20;
     const speed = 3 + Math.random() * 2;
     particles.push({
@@ -263,8 +263,8 @@ function summerUltimateCombo(x: number, y: number, theme: ThemeConfig): ComboPar
       rotation: 0, rotationSpeed: 0,
     });
   }
-  // Extra 40 fast burst particles
-  for (let i = 0; i < 40; i++) {
+  // Extra 20 fast burst particles — reduced from 40
+  for (let i = 0; i < 20; i++) {
     const angle = (Math.PI * 2 * i) / 40;
     const speed = 3 + Math.random() * 2;
     particles.push({
@@ -348,8 +348,8 @@ function autumnUltimateCombo(x: number, y: number, theme: ThemeConfig): ComboPar
       rotation: 0, rotationSpeed: 0,
     });
   }
-  // Extra 40 burst particles
-  for (let i = 0; i < 40; i++) {
+  // Extra 20 burst particles — reduced from 40
+  for (let i = 0; i < 20; i++) {
     const angle = (Math.PI * 2 * i) / 40;
     const speed = 3 + Math.random() * 2;
     particles.push({
@@ -432,8 +432,8 @@ function winterUltimateCombo(x: number, y: number, theme: ThemeConfig): ComboPar
       rotation: 0, rotationSpeed: 0,
     });
   }
-  // Extra 40 burst particles
-  for (let i = 0; i < 40; i++) {
+  // Extra 20 burst particles — reduced from 40
+  for (let i = 0; i < 20; i++) {
     const angle = (Math.PI * 2 * i) / 40;
     const speed = 3 + Math.random() * 2;
     particles.push({
