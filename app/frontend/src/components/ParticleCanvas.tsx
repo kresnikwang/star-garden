@@ -1074,7 +1074,11 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
       tracker.time = now;
 
       if (tracker.count >= 3 && isGestureUnlocked(growthRef.current, 'combo_triple_tap')) {
+        // Fully reset tracker to prevent 4th tap re-triggering
         tracker.count = 0;
+        tracker.x = 0;
+        tracker.y = 0;
+        tracker.time = 0;
         createThemeBurst(x, y);
         onGestureRef.current({ type: 'combo_triple_tap', x, y, data: { comboData: { themeId: themeRef.current.id } } });
         return;
