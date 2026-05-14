@@ -971,39 +971,62 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
     const colors = themeRef.current.particleColors;
     const newParticles: Particle[] = [];
 
+    // Central flash — big white core
+    newParticles.push({
+      x, y, vx: 0, vy: 0,
+      life: 1, maxLife: 30,
+      color: '#FFFFFF',
+      size: 20,
+      type: 'combo_star',
+      rotation: 0, rotationSpeed: 0,
+      breathPhase: 0, breathSpeed: 0,
+    });
+
+    // Expanding shockwave ring
+    for (let i = 0; i < 3; i++) {
+      newParticles.push({
+        x, y, vx: 0, vy: 0,
+        life: 1, maxLife: 40 + i * 15,
+        color: '#FFFFFF',
+        size: 12 + i * 6,
+        type: 'combo_ring',
+        rotation: 0, rotationSpeed: 0,
+      });
+    }
+
     if (themeId === 'spring') {
-      // Cherry blossom rain — reduced from 30
-      for (let i = 0; i < 20; i++) {
+      // Cherry blossom rain — 40 petals (doubled)
+      for (let i = 0; i < 40; i++) {
         const angle = Math.random() * Math.PI * 2;
-        const speed = 1 + Math.random() * 3;
+        const speed = 1.5 + Math.random() * 4;
         newParticles.push({
           x: x + (Math.random() - 0.5) * 40,
           y: y + (Math.random() - 0.5) * 40,
           vx: Math.cos(angle) * speed,
           vy: Math.sin(angle) * speed + 1,
           life: 1,
-          maxLife: 100 + Math.random() * 60,
+          maxLife: 120 + Math.random() * 60,
           color: colors[Math.floor(Math.random() * colors.length)],
-          size: 2 + Math.random() * 3,
+          size: 3 + Math.random() * 4,
           type: 'petal',
           rotation: Math.random() * Math.PI * 2,
           rotationSpeed: (Math.random() - 0.5) * 0.06,
         });
       }
     } else if (themeId === 'summer') {
-      // Firefly burst — reduced from 25
-      for (let i = 0; i < 15; i++) {
+      // Firefly burst — 35 particles (more than doubled)
+      for (let i = 0; i < 35; i++) {
         const angle = Math.random() * Math.PI * 2;
-        const speed = 2 + Math.random() * 4;
+        const speed = 2.5 + Math.random() * 5;
         newParticles.push({
           x,
           y,
           vx: Math.cos(angle) * speed,
           vy: Math.sin(angle) * speed,
           life: 1,
-          maxLife: 80 + Math.random() * 60,
+          maxLife: 100 + Math.random() * 80,
           color: colors[Math.floor(Math.random() * colors.length)],
-          size: 2 + Math.random() * 2.5,
+          size: 3 + Math.random() * 4,
           type: 'ambient',
           rotation: 0,
           rotationSpeed: 0,
@@ -1012,38 +1035,38 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
         });
       }
     } else if (themeId === 'autumn') {
-      // Maple leaf whirlwind — reduced from 20
-      for (let i = 0; i < 12; i++) {
-        const angle = (Math.PI * 2 * i) / 20;
-        const speed = 3 + Math.random() * 3;
+      // Maple leaf whirlwind — 36 particles (tripled)
+      for (let i = 0; i < 36; i++) {
+        const angle = (Math.PI * 2 * i) / 36;
+        const speed = 3.5 + Math.random() * 4;
         newParticles.push({
           x: x + Math.cos(angle) * 20,
           y: y + Math.sin(angle) * 20,
           vx: Math.cos(angle + Math.PI / 2) * speed,
           vy: Math.sin(angle + Math.PI / 2) * speed,
           life: 1,
-          maxLife: 90 + Math.random() * 50,
+          maxLife: 100 + Math.random() * 60,
           color: colors[Math.floor(Math.random() * colors.length)],
-          size: 3 + Math.random() * 4,
+          size: 4 + Math.random() * 5,
           type: 'petal',
           rotation: angle,
           rotationSpeed: (Math.random() > 0.5 ? 1 : -1) * 0.08,
         });
       }
     } else {
-      // Winter: ice crystal burst — reduced from 24
-      for (let i = 0; i < 16; i++) {
-        const angle = (Math.PI * 2 * i) / 24;
-        const speed = 1.5 + Math.random() * 3;
+      // Winter: ice crystal burst — 40 particles (2.5x)
+      for (let i = 0; i < 40; i++) {
+        const angle = (Math.PI * 2 * i) / 40;
+        const speed = 2 + Math.random() * 4;
         newParticles.push({
           x,
           y,
           vx: Math.cos(angle) * speed,
           vy: Math.sin(angle) * speed,
           life: 1,
-          maxLife: 70 + Math.random() * 40,
-          color: i % 3 === 0 ? '#FFFFFF' : colors[Math.floor(Math.random() * colors.length)],
-          size: 1.5 + Math.random() * 2,
+          maxLife: 90 + Math.random() * 60,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          size: 2 + Math.random() * 3.5,
           type: 'sparkle',
           rotation: angle,
           rotationSpeed: 0.05,

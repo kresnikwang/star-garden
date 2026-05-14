@@ -1,5 +1,16 @@
 import { ThemeConfig, themes } from './themes';
 
+// Simple inline tint: blend a hex color with white by [amount] (0-1)
+function tint(hex: string, amount: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const r2 = Math.round(r + (255 - r) * amount);
+  const g2 = Math.round(g + (255 - g) * amount);
+  const b2 = Math.round(b + (255 - b) * amount);
+  return `#${r2.toString(16).padStart(2, '0')}${g2.toString(16).padStart(2, '0')}${b2.toString(16).padStart(2, '0')}`;
+}
+
 // Combo tier definitions
 export type ComboTier = 'base' | 'ultimate';
 
@@ -91,13 +102,15 @@ function addCometTrail(base: ComboParticle[], x: number, y: number, theme: Theme
   for (let i = 0; i < 8; i++) {
     const angle = Math.random() * Math.PI * 2;
     const speed = 0.3 + Math.random() * 0.7;
+    const themeColor = theme.particleColors[Math.floor(Math.random() * theme.particleColors.length)];
+    const color = i % 2 === 0 ? tint(themeColor, 0.70) : themeColor;
     base.push({
       x, y,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
       life: 1,
       maxLife: 250 + Math.random() * 100,
-      color: i % 2 === 0 ? '#FFFFFF' : theme.particleColors[Math.floor(Math.random() * theme.particleColors.length)],
+      color,
       size: 1.5 + Math.random() * 2,
       type: 'combo_vortex',
       rotation: angle,
@@ -373,7 +386,7 @@ function autumnUltimateCombo(x: number, y: number, theme: ThemeConfig): ComboPar
 function winterBaseCombo(x: number, y: number, theme: ThemeConfig): ComboParticle[] {
   const particles: ComboParticle[] = [];
   const count = 50; // reduced from 80
-  const auroraColors = ['#85C1E9', '#AED6F1', '#A3E4D7', '#D2B4DE', '#FFFFFF'];
+  const auroraColors = ['#85C1E9', '#AED6F1', '#A3E4D7', '#D2B4DE', tint('#85C1E9', 0.75)];
   for (let i = 0; i < count; i++) {
     const angle = (Math.PI * 2 * i) / count;
     particles.push({
@@ -400,6 +413,7 @@ function winterBaseCombo(x: number, y: number, theme: ThemeConfig): ComboParticl
 
 function winterUltimateCombo(x: number, y: number, theme: ThemeConfig): ComboParticle[] {
   const particles = winterBaseCombo(x, y, theme);
+  const auroraColors = ['#85C1E9', '#AED6F1', '#A3E4D7', '#D2B4DE', tint('#85C1E9', 0.75)];
   for (const p of particles) {
     p.maxLife *= 1.4;
     p.size *= 1.5;
@@ -426,7 +440,7 @@ function winterUltimateCombo(x: number, y: number, theme: ThemeConfig): ComboPar
     particles.push({
       x, y, vx: 0, vy: 0,
       life: 1, maxLife: 90 + i * 20,
-      color: ['#85C1E9', '#A3E4D7', '#D2B4DE', '#FFFFFF'][i],
+      color: ['#85C1E9', '#A3E4D7', '#D2B4DE', tint('#85C1E9', 0.80)][i],
       size: 8 + i * 4,
       type: 'combo_ring',
       rotation: 0, rotationSpeed: 0,
