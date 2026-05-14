@@ -917,13 +917,14 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
       const px = x1 + dx * t;
       const py = y1 + dy * t;
       for (let j = 0; j < 2; j++) {
-        // Random offset perpendicular to bridge direction, not screen axes
+        // Strictly perpendicular offset — no screen-axis jitter to avoid squash
         const offset = (Math.random() - 0.5) * spread;
         newParticles.push({
-          x: px + perpX * offset + (Math.random() - 0.5) * 4,
-          y: py + perpY * offset + (Math.random() - 0.5) * 4,
-          vx: perpX * (Math.random() - 0.3) * 2 + (Math.random() - 0.5) * 0.8,
-          vy: perpY * (Math.random() - 0.3) * 2 + (Math.random() - 0.5) * 0.8,
+          x: px + perpX * offset,
+          y: py + perpY * offset,
+          // Drift gently along perpendicular direction, no extra screen-axis noise
+          vx: perpX * (Math.random() - 0.3) * 1.5,
+          vy: perpY * (Math.random() - 0.3) * 1.5,
           life: 1,
           maxLife: 120 + Math.random() * 60,
           color: colors[Math.floor(Math.random() * colors.length)],
@@ -1200,7 +1201,9 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
       lastInteractionRef.current = Date.now();
 
       // Pinch gesture detection (two fingers, neither is long-pressing)
-      if (e.touches.length === 2 && !isLongPressingRef.current) {
+      // Also skip if one finger is already in the 500ms long-press window —
+      // let dual-long-press take over in that case
+      if (e.touches.length === 2 && !isLongPressingRef.current && !longPressTimerRef.current) {
         const t1 = e.touches[0];
         const t2 = e.touches[1];
         const dist = Math.sqrt((t1.clientX - t2.clientX) ** 2 + (t1.clientY - t2.clientY) ** 2);
