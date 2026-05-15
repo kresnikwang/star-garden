@@ -1,0 +1,116 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches:
+      - main
+  # 也支持手动触发
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. 检出代码 ──────────────────────────────────────────
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── 2. 设置 Node 环境 ────────────────────────────────────
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: 'app/frontend/pnpm-lock.yaml'
+
+      # ── 3. 安装依赖 ──────────────────────────────────────────
+      - name: Install dependencies
+        run: pnpm install
+        working-directory: app/frontend
+
+      # ── 4. TypeScript 检查 ──────────────────────────────────
+      - name: Type check
+        run: npx tsc --noEmit
+        working-directory: app/frontend
+
+      # ── 5. 构建生产包 ────────────────────────────────────────
+      - name: Build frontend
+        run: pnpm run build
+        working-directory: app/frontend
+
+      # ── 6. 验证构建产物 ──────────────────────────────────────
+      - name: Verify build output
+        run: |
+          echo "Checking build output..."
+          if [ ! -f "app/frontend/dist/index.html" ]; then
+            echo "ERROR: index.html not found in dist/"
+            exit 1
+          fi
+          ASSET_COUNT=$(find app/frontend/dist/assets -type f | wc -l)
+          echo "Asset files: $ASSET_COUNT"
+          if [ "$ASSET_COUNT" -lt 5 ]; then
+            echo "ERROR: Too few asset files ($ASSET_COUNT)"
+            exit 1
+          fi
+          echo "Build verification passed."
+
+      # ── 7. 上传构建产物（方便调试） ──────────────────────────
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: star-garden-dist
+          path: app/frontend/dist/
+          retention-days: 7
+
+      # ── 8. 安装 SSH 密钥 & 部署 ─────────────────────────────
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # 添加服务器 host key 到 known_hosts，避免首次连接提示
+          ssh-keyscan -H "${{ secrets.REMOTE_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Deploy to Server
+        run: |
+          # 创建必要目录
+          ssh -i ~/.ssh/deploy_key root@${{ secrets.REMOTE_HOST }} \
+            "mkdir -p /www/wwwroot/star-garden/assets /www/wwwroot/star-garden/blog"
+
+          # 备份旧文件（保留最近2次备份）
+          ssh -i ~/.ssh/deploy_key root@${{ secrets.REMOTE_HOST }} \
+            "if [ -d /www/wwwroot/star-garden ]; then \
+               mkdir -p /www/backups/star-garden; \
+               tar -czf /www/backups/star-garden/backup-$(date +%Y%m%d-%H%M%S).tar.gz \
+                 -C /www/wwwroot star-garden/ 2>/dev/null || true; \
+               ls -t /www/backups/star-garden/*.tar.gz | tail -n +3 | xargs rm -f 2>/dev/null || true; \
+             fi"
+
+          # 同步文件（rsync 增量同步，删除远端已不存在的文件）
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            app/frontend/dist/ \
+            root@${{ secrets.REMOTE_HOST }}:/www/wwwroot/star-garden/
+
+      # ── 9. 验证部署结果 ──────────────────────────────────────
+      - name: Verify deployment
+        run: |
+          echo "Verifying deployment..."
+          ssh -i ~/.ssh/deploy_key root@${{ secrets.REMOTE_HOST }} << 'EOF'
+            TARGET=/www/wwwroot/star-garden
+            echo "Remote index.html exists: $([ -f $TARGET/index.html ] && echo 'YES' || echo 'NO')"
+            echo "Remote assets count: $(find $TARGET/assets -type f 2>/dev/null | wc -l)"
+            echo "Remote index.html snippet:"
+            head -5 $TARGET/index.html
+          EOF
+
+      # ── 10. 清理 SSH 密钥 ────────────────────────────────────
+      - name: Clean up SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
