@@ -68,16 +68,37 @@ jobs:
           path: app/frontend/dist/
           retention-days: 7
 
-      # ── 8. 安装 SSH 密钥 & 部署 ─────────────────────────────
+      # ── 8. 检查部署 Secrets 是否已配置 ──────────────────────
+      - name: Validate deployment secrets
+        id: secrets-check
+        run: |
+          MISSING=""
+          if [ -z "${{ secrets.SSH_PRIVATE_KEY }}" ]; then
+            MISSING="$MISSING SSH_PRIVATE_KEY"
+          fi
+          if [ -z "${{ secrets.REMOTE_HOST }}" ]; then
+            MISSING="$MISSING REMOTE_HOST"
+          fi
+          if [ -n "$MISSING" ]; then
+            echo "::warning::Deploy skipped — missing secrets:$MISSING"
+            echo "deploy_enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy_enabled=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::All deployment secrets are set, will proceed to deploy."
+          fi
+
+      # ── 9. 安装 SSH 密钥 ─────────────────────────────────────
       - name: Set up SSH
+        if: steps.secrets-check.outputs.deploy_enabled == 'true'
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          # 添加服务器 host key 到 known_hosts，避免首次连接提示
           ssh-keyscan -H "${{ secrets.REMOTE_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
 
+      # ── 10. 部署到服务器 ─────────────────────────────────────
       - name: Deploy to Server
+        if: steps.secrets-check.outputs.deploy_enabled == 'true'
         run: |
           # 创建必要目录
           ssh -i ~/.ssh/deploy_key root@${{ secrets.REMOTE_HOST }} \
@@ -98,8 +119,9 @@ jobs:
             app/frontend/dist/ \
             root@${{ secrets.REMOTE_HOST }}:/www/wwwroot/star-garden/
 
-      # ── 9. 验证部署结果 ──────────────────────────────────────
+      # ── 11. 验证部署结果 ─────────────────────────────────────
       - name: Verify deployment
+        if: steps.secrets-check.outputs.deploy_enabled == 'true'
         run: |
           echo "Verifying deployment..."
           ssh -i ~/.ssh/deploy_key root@${{ secrets.REMOTE_HOST }} << 'EOF'
@@ -110,7 +132,7 @@ jobs:
             head -5 $TARGET/index.html
           EOF
 
-      # ── 10. 清理 SSH 密钥 ────────────────────────────────────
+      # ── 12. 清理 SSH 密钥 ────────────────────────────────────
       - name: Clean up SSH key
         if: always()
         run: rm -f ~/.ssh/deploy_key
