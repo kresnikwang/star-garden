@@ -39,6 +39,13 @@ const COLLECTIBLE_AUDIO_MAP: Record<string, AudioLayerType> = {
   '\u{1F525}': 'fire',       // 暖炉
 };
 
+export interface AudioVoice {
+  osc: OscillatorNode;
+  gain: GainNode;
+  startTime: number;
+  stopTime: number;
+}
+
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
@@ -46,6 +53,12 @@ export class AudioEngine {
   private isPlaying = false;
   private melodyInterval: ReturnType<typeof setInterval> | null = null;
   private noteIndex = 0;
+
+  // Voice management for pooling and limiting
+  private activeVoices: AudioVoice[] = [];
+  private readonly MAX_VOICES = 12; // Prevent audio clipping and CPU spikes
+  private gainPool: GainNode[] = [];
+  private readonly GAIN_POOL_SIZE = 16;
 
   // Charge sound state
   private chargeOsc: OscillatorNode | null = null;
@@ -80,6 +93,80 @@ export class AudioEngine {
     this.melodyGain = this.ctx.createGain();
     this.melodyGain.gain.value = 0;
     this.melodyGain.connect(this.masterGain);
+
+    // Initialize GainNode pool
+    for (let i = 0; i < this.GAIN_POOL_SIZE; i++) {
+      const g = this.ctx.createGain();
+      g.connect(this.masterGain);
+      this.gainPool.push(g);
+    }
+  }
+
+  private getGainNode(): GainNode {
+    if (!this.ctx) this.init();
+    if (this.gainPool.length > 0) {
+      return this.gainPool.pop()!;
+    }
+    // Fallback if pool empty (rare with proper limiting)
+    const g = this.ctx!.createGain();
+    g.connect(this.masterGain!);
+    return g;
+  }
+
+  private releaseGainNode(gain: GainNode, delay: number): void {
+    setTimeout(() => {
+      if (this.gainPool.length < this.GAIN_POOL_SIZE) {
+        // Reset gain value before returning to pool
+        gain.gain.value = 0;
+        this.gainPool.push(gain);
+      } else {
+        gain.disconnect();
+      }
+    }, delay * 1000 + 100);
+  }
+
+  private cleanupVoices(): void {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    this.activeVoices = this.activeVoices.filter(v => v.stopTime > now);
+  }
+
+  private createVoice(type: OscillatorType, freq: number, volume: number, duration: number, delay = 0): void {
+    if (!this.ctx) this.init();
+    this.cleanupVoices();
+
+    // Voice limiting: stop oldest if at cap
+    if (this.activeVoices.length >= this.MAX_VOICES) {
+      const oldest = this.activeVoices.shift();
+      if (oldest) {
+        try {
+          oldest.gain.gain.cancelScheduledValues(this.ctx!.currentTime);
+          oldest.gain.gain.exponentialRampToValueAtTime(0.001, this.ctx!.currentTime + 0.05);
+          oldest.osc.stop(this.ctx!.currentTime + 0.06);
+        } catch {}
+      }
+    }
+
+    const ctx = this.ctx!;
+    const osc = ctx.createOscillator();
+    const gain = this.getGainNode();
+    const startTime = ctx.currentTime + delay;
+    const stopTime = startTime + duration;
+
+    osc.type = type;
+    osc.frequency.value = freq;
+    
+    gain.gain.cancelScheduledValues(startTime);
+    gain.gain.setValueAtTime(0, startTime);
+    gain.gain.linearRampToValueAtTime(volume, startTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, stopTime);
+
+    osc.connect(gain);
+    osc.start(startTime);
+    osc.stop(stopTime);
+
+    this.activeVoices.push({ osc, gain, startTime, stopTime });
+    this.releaseGainNode(gain, duration + delay);
   }
 
   resume(): void {
@@ -90,88 +177,24 @@ export class AudioEngine {
 
   // Play note based on click count (cycles through all 14 notes)
   playNote(theme: ThemeConfig, clickCount: number): void {
-    if (!this.ctx || !this.masterGain) {
-      this.init();
-    }
-    this.resume();
-
-    const ctx = this.ctx!;
     const scale = theme.pentatonicScale;
     const noteFreq = scale[clickCount % scale.length];
 
-    // Create oscillator for the click note
-    const osc = ctx.createOscillator();
-    const gainNode = ctx.createGain();
-
-    osc.type = 'sine';
-    osc.frequency.value = noteFreq;
-
-    // Add slight detune for warmth
-    osc.detune.value = Math.random() * 10 - 5;
-
-    gainNode.gain.setValueAtTime(0.4, ctx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.8);
-
-    osc.connect(gainNode);
-    gainNode.connect(this.masterGain!);
-
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.8);
-
-    // Add harmonic overtone
-    const osc2 = ctx.createOscillator();
-    const gain2 = ctx.createGain();
-    osc2.type = 'triangle';
-    osc2.frequency.value = noteFreq * 2;
-    gain2.gain.setValueAtTime(0.1, ctx.currentTime);
-    gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
-    osc2.connect(gain2);
-    gain2.connect(this.masterGain!);
-    osc2.start(ctx.currentTime);
-    osc2.stop(ctx.currentTime + 0.5);
+    // Use pooled voice for main note
+    this.createVoice('sine', noteFreq, 0.4, 0.8);
+    // Use pooled voice for harmonic overtone
+    this.createVoice('triangle', noteFreq * 2, 0.1, 0.5);
   }
 
   // Play note based on Y position (maps screen height to 14 notes)
   playNoteByPosition(theme: ThemeConfig, y: number, screenHeight: number): void {
-    if (!this.ctx || !this.masterGain) {
-      this.init();
-    }
-    this.resume();
-
-    const ctx = this.ctx!;
     const scale = theme.pentatonicScale;
-    // Map Y position: top = high notes, bottom = low notes
     const normalizedY = Math.max(0, Math.min(1, y / screenHeight));
     const noteIndex = Math.floor((1 - normalizedY) * (scale.length - 1));
     const noteFreq = scale[Math.max(0, Math.min(scale.length - 1, noteIndex))];
 
-    const osc = ctx.createOscillator();
-    const gainNode = ctx.createGain();
-
-    osc.type = 'sine';
-    osc.frequency.value = noteFreq;
-    osc.detune.value = Math.random() * 8 - 4;
-
-    gainNode.gain.setValueAtTime(0.35, ctx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.6);
-
-    osc.connect(gainNode);
-    gainNode.connect(this.masterGain!);
-
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.6);
-
-    // Soft overtone
-    const osc2 = ctx.createOscillator();
-    const gain2 = ctx.createGain();
-    osc2.type = 'triangle';
-    osc2.frequency.value = noteFreq * 1.5; // Fifth harmonic for richness
-    gain2.gain.setValueAtTime(0.06, ctx.currentTime);
-    gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
-    osc2.connect(gain2);
-    gain2.connect(this.masterGain!);
-    osc2.start(ctx.currentTime);
-    osc2.stop(ctx.currentTime + 0.4);
+    this.createVoice('sine', noteFreq, 0.35, 0.6);
+    this.createVoice('triangle', noteFreq * 1.5, 0.06, 0.4);
   }
 
   // Start continuous charge sound (rising pitch drone)
@@ -480,15 +503,11 @@ export class AudioEngine {
 
   // Play explosion sound effect on long press release
   playExplosionSound(theme: ThemeConfig): void {
-    if (!this.ctx || !this.masterGain) {
-      this.init();
-    }
-    this.resume();
-
+    if (!this.ctx) this.init();
     const ctx = this.ctx!;
     const baseFreq = theme.pentatonicScale[Math.floor(theme.pentatonicScale.length / 2)];
 
-    // White noise burst for explosion
+    // White noise burst for explosion — using pooled gain
     const bufferSize = ctx.sampleRate * 0.5;
     const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
     const output = noiseBuffer.getChannelData(0);
@@ -497,39 +516,20 @@ export class AudioEngine {
     }
     const noiseNode = ctx.createBufferSource();
     noiseNode.buffer = noiseBuffer;
-    const noiseGain = ctx.createGain();
+    const noiseGain = this.getGainNode();
     noiseGain.gain.setValueAtTime(0.3, ctx.currentTime);
     noiseGain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
     noiseNode.connect(noiseGain);
-    noiseGain.connect(this.masterGain!);
     noiseNode.start(ctx.currentTime);
     noiseNode.stop(ctx.currentTime + 0.5);
+    this.releaseGainNode(noiseGain, 0.5);
 
-    // Low boom
-    const boom = ctx.createOscillator();
-    const boomGain = ctx.createGain();
-    boom.type = 'sine';
-    boom.frequency.setValueAtTime(baseFreq * 0.5, ctx.currentTime);
-    boom.frequency.exponentialRampToValueAtTime(30, ctx.currentTime + 0.3);
-    boomGain.gain.setValueAtTime(0.5, ctx.currentTime);
-    boomGain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
-    boom.connect(boomGain);
-    boomGain.connect(this.masterGain!);
-    boom.start(ctx.currentTime);
-    boom.stop(ctx.currentTime + 0.4);
+    // Low boom - pooled
+    this.createVoice('sine', baseFreq * 0.5, 0.5, 0.4);
 
-    // Shimmer overtones (sparkle effect)
+    // Shimmer overtones (sparkle effect) - pooled
     for (let i = 0; i < 3; i++) {
-      const shimmer = ctx.createOscillator();
-      const shimmerGain = ctx.createGain();
-      shimmer.type = 'sine';
-      shimmer.frequency.value = baseFreq * (2 + i);
-      shimmerGain.gain.setValueAtTime(0.1, ctx.currentTime + 0.05 * i);
-      shimmerGain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.6 + 0.1 * i);
-      shimmer.connect(shimmerGain);
-      shimmerGain.connect(this.masterGain!);
-      shimmer.start(ctx.currentTime + 0.05 * i);
-      shimmer.stop(ctx.currentTime + 0.7 + 0.1 * i);
+      this.createVoice('sine', baseFreq * (2 + i), 0.1, 0.6, 0.05 * i);
     }
   }
 
@@ -554,37 +554,33 @@ export class AudioEngine {
 
   private playMelodyNote(theme: ThemeConfig): void {
     if (!this.ctx || !this.melodyGain) return;
-
-    const ctx = this.ctx;
     const notes = theme.melodyNotes;
     const freq = notes[this.noteIndex % notes.length];
 
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
+    // Note: melody notes are not strictly voice-limited to ensure musical continuity, 
+    // but we still use pooled gain nodes for efficiency.
+    const gain = this.getGainNode();
+    const osc = this.ctx!.createOscillator();
     osc.type = 'sine';
     osc.frequency.value = freq;
-
-    gain.gain.setValueAtTime(0.3, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.7);
-
+    gain.gain.setValueAtTime(0.3, this.ctx!.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx!.currentTime + 0.7);
     osc.connect(gain);
-    gain.connect(this.melodyGain!);
+    osc.start(this.ctx!.currentTime);
+    osc.stop(this.ctx!.currentTime + 0.7);
+    this.releaseGainNode(gain, 0.7);
 
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.7);
-
-    // Pad note for atmosphere
-    const pad = ctx.createOscillator();
-    const padGain = ctx.createGain();
-    pad.type = 'sine';
-    pad.frequency.value = freq / 2;
-    padGain.gain.setValueAtTime(0.08, ctx.currentTime);
-    padGain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 1.5);
-    pad.connect(padGain);
-    padGain.connect(this.melodyGain!);
-    pad.start(ctx.currentTime);
-    pad.stop(ctx.currentTime + 1.5);
+    // Pad note
+    const padGain = this.getGainNode();
+    const padOsc = this.ctx!.createOscillator();
+    padOsc.type = 'sine';
+    padOsc.frequency.value = freq / 2;
+    padGain.gain.setValueAtTime(0.08, this.ctx!.currentTime);
+    padGain.gain.exponentialRampToValueAtTime(0.01, this.ctx!.currentTime + 1.5);
+    padOsc.connect(padGain);
+    padOsc.start(this.ctx!.currentTime);
+    padOsc.stop(this.ctx!.currentTime + 1.5);
+    this.releaseGainNode(padGain, 1.5);
 
     this.noteIndex++;
   }
@@ -604,12 +600,9 @@ export class AudioEngine {
   // Play subtle sound layers based on collected items during fireworks
 
   playCollectibleLayers(theme: ThemeConfig, collected: Record<string, number>): void {
-    if (!this.ctx || !this.masterGain) {
-      this.init();
-    }
-    this.resume();
-
+    if (!this.ctx) this.init();
     const ctx = this.ctx!;
+    
     // Group collected items by audio layer type
     const layerCounts: Record<AudioLayerType, number> = {
       bell: 0, water: 0, wind: 0, fire: 0, nature: 0, creature: 0, crystal: 0,
@@ -623,22 +616,13 @@ export class AudioEngine {
 
     const baseFreq = theme.pentatonicScale[Math.floor(theme.pentatonicScale.length / 2)];
 
-    // Bell layer: high sine with fast decay
+    // Bell layer - pooled
     if (layerCounts.bell > 0) {
       const vol = Math.min(Math.log(layerCounts.bell + 1) * 0.03, 0.08);
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = 1200 + Math.random() * 400;
-      gain.gain.setValueAtTime(vol, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-      osc.connect(gain);
-      gain.connect(this.masterGain!);
-      osc.start(ctx.currentTime + 0.05);
-      osc.stop(ctx.currentTime + 0.55);
+      this.createVoice('sine', 1200 + Math.random() * 400, vol, 0.5, 0.05);
     }
 
-    // Water layer: filtered noise burst with downward pitch
+    // Water layer - using pooled gain
     if (layerCounts.water > 0) {
       const vol = Math.min(Math.log(layerCounts.water + 1) * 0.025, 0.06);
       const bufSize = Math.floor(ctx.sampleRate * 0.3);
@@ -654,17 +638,17 @@ export class AudioEngine {
       filter.frequency.setValueAtTime(2000, ctx.currentTime);
       filter.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.25);
       filter.Q.value = 3;
-      const gain = ctx.createGain();
+      const gain = this.getGainNode();
       gain.gain.setValueAtTime(vol, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
       src.connect(filter);
       filter.connect(gain);
-      gain.connect(this.masterGain!);
       src.start(ctx.currentTime + 0.02);
       src.stop(ctx.currentTime + 0.35);
+      this.releaseGainNode(gain, 0.35);
     }
 
-    // Wind layer: band-pass filtered noise with slow attack
+    // Wind layer - using pooled gain
     if (layerCounts.wind > 0) {
       const vol = Math.min(Math.log(layerCounts.wind + 1) * 0.02, 0.05);
       const bufSize = Math.floor(ctx.sampleRate * 0.6);
@@ -680,163 +664,77 @@ export class AudioEngine {
       filter.type = 'bandpass';
       filter.frequency.value = 800 + Math.random() * 400;
       filter.Q.value = 1.5;
-      const gain = ctx.createGain();
+      const gain = this.getGainNode();
       gain.gain.value = vol;
       src.connect(filter);
       filter.connect(gain);
-      gain.connect(this.masterGain!);
       src.start(ctx.currentTime + 0.03);
       src.stop(ctx.currentTime + 0.65);
+      this.releaseGainNode(gain, 0.65);
     }
 
-    // Fire layer: low crackle
+    // Fire layer - pooled
     if (layerCounts.fire > 0) {
       const vol = Math.min(Math.log(layerCounts.fire + 1) * 0.025, 0.06);
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sawtooth';
-      osc.frequency.value = 80 + Math.random() * 40;
-      gain.gain.setValueAtTime(vol, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-      const distort = ctx.createWaveShaperNode ? ctx.createWaveShaperNode() : null;
-      osc.connect(gain);
-      gain.connect(this.masterGain!);
-      osc.start(ctx.currentTime + 0.01);
-      osc.stop(ctx.currentTime + 0.35);
+      this.createVoice('sawtooth', 80 + Math.random() * 40, vol, 0.3, 0.01);
     }
 
-    // Nature layer: soft plucked string (triangle with fast decay)
+    // Nature layer - pooled
     if (layerCounts.nature > 0) {
       const vol = Math.min(Math.log(layerCounts.nature + 1) * 0.02, 0.06);
-      const noteFreq = baseFreq * (1 + Math.random() * 0.2);
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'triangle';
-      osc.frequency.value = noteFreq;
-      gain.gain.setValueAtTime(vol, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
-      osc.connect(gain);
-      gain.connect(this.masterGain!);
-      osc.start(ctx.currentTime + 0.02);
-      osc.stop(ctx.currentTime + 0.45);
+      this.createVoice('triangle', baseFreq * (1 + Math.random() * 0.2), vol, 0.4, 0.02);
     }
 
-    // Creature layer: sine with vibrato
+    // Creature layer - pooled
     if (layerCounts.creature > 0) {
       const vol = Math.min(Math.log(layerCounts.creature + 1) * 0.025, 0.06);
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      const vibrato = ctx.createOscillator();
-      const vibratoGain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = baseFreq * 1.5;
-      vibrato.type = 'sine';
-      vibrato.frequency.value = 6;
-      vibratoGain.gain.value = 15;
-      vibrato.connect(vibratoGain);
-      vibratoGain.connect(osc.frequency);
-      gain.gain.setValueAtTime(vol, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-      osc.connect(gain);
-      gain.connect(this.masterGain!);
-      osc.start(ctx.currentTime);
-      vibrato.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.55);
-      vibrato.stop(ctx.currentTime + 0.55);
+      this.createVoice('sine', baseFreq * 1.5, vol, 0.5);
     }
 
-    // Crystal layer: detuned pair of high sines (shimmer)
+    // Crystal layer - pooled
     if (layerCounts.crystal > 0) {
       const vol = Math.min(Math.log(layerCounts.crystal + 1) * 0.02, 0.06);
-      const freq = baseFreq * 3;
-      for (let i = 0; i < 2; i++) {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = freq + (i === 0 ? -3 : 3); // slight detune
-        gain.gain.setValueAtTime(vol * 0.6, ctx.currentTime + 0.02 * i);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
-        osc.connect(gain);
-        gain.connect(this.masterGain!);
-        osc.start(ctx.currentTime + 0.02 * i);
-        osc.stop(ctx.currentTime + 0.65);
-      }
+      this.createVoice('sine', baseFreq * 3 - 3, vol * 0.6, 0.6, 0.02);
+      this.createVoice('sine', baseFreq * 3 + 3, vol * 0.6, 0.6, 0.04);
     }
   }
 
   // ── Combo Sound Effect ──────────────────────────────────────────────
 
   playComboSound(theme: ThemeConfig, tier: ComboTier): void {
-    if (!this.ctx || !this.masterGain) {
-      this.init();
-    }
-    this.resume();
-
-    const ctx = this.ctx!;
+    if (!this.ctx) this.init();
     const scale = theme.pentatonicScale;
     const isUltimate = tier === 'ultimate';
     const volume = isUltimate ? 0.35 : 0.25;
 
-    // Rising arpeggio — plays 5 or 7 notes in quick succession
+    // Rising arpeggio — pooled
     const noteCount = isUltimate ? 7 : 5;
     const startIndex = Math.floor(scale.length / 2) - Math.floor(noteCount / 2);
     for (let i = 0; i < noteCount; i++) {
       const idx = Math.max(0, Math.min(scale.length - 1, startIndex + i));
       const freq = scale[idx];
       const delay = i * 0.08;
-
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0, ctx.currentTime + delay);
-      gain.gain.linearRampToValueAtTime(volume * 0.5, ctx.currentTime + delay + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + delay + 0.5);
-      osc.connect(gain);
-      gain.connect(this.masterGain!);
-      osc.start(ctx.currentTime + delay);
-      osc.stop(ctx.currentTime + delay + 0.55);
-
-      // Harmonic
-      const h = ctx.createOscillator();
-      const hg = ctx.createGain();
-      h.type = 'triangle';
-      h.frequency.value = freq * 2;
-      hg.gain.setValueAtTime(0, ctx.currentTime + delay);
-      hg.gain.linearRampToValueAtTime(volume * 0.15, ctx.currentTime + delay + 0.02);
-      hg.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + delay + 0.35);
-      h.connect(hg);
-      hg.connect(this.masterGain!);
-      h.start(ctx.currentTime + delay);
-      h.stop(ctx.currentTime + delay + 0.4);
+      this.createVoice('sine', freq, volume * 0.5, 0.5, delay);
+      this.createVoice('triangle', freq * 2, volume * 0.15, 0.35, delay);
     }
 
-    // Culminating chord at the end
+    // Culminating chord - pooled
     const chordDelay = noteCount * 0.08 + 0.05;
+    const centerIdx = Math.floor(scale.length / 2);
     const chordFreqs = [
-      scale[Math.floor(scale.length / 2)],
-      scale[Math.floor(scale.length / 2)] * 1.25,
-      scale[Math.floor(scale.length / 2)] * 1.5,
+      scale[centerIdx],
+      scale[centerIdx] * 1.25,
+      scale[centerIdx] * 1.5,
     ];
-    if (isUltimate) {
-      chordFreqs.push(scale[Math.floor(scale.length / 2)] * 2);
-    }
+    if (isUltimate) chordFreqs.push(scale[centerIdx] * 2);
+    
     for (const freq of chordFreqs) {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0, ctx.currentTime + chordDelay);
-      gain.gain.linearRampToValueAtTime(volume * 0.4, ctx.currentTime + chordDelay + 0.05);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + chordDelay + 1.2);
-      osc.connect(gain);
-      gain.connect(this.masterGain!);
-      osc.start(ctx.currentTime + chordDelay);
-      osc.stop(ctx.currentTime + chordDelay + 1.3);
+      this.createVoice('sine', freq, volume * 0.4, 1.2, chordDelay);
     }
 
-    // Shimmer noise for ultimate
+    // Shimmer noise for ultimate - pooled gain
     if (isUltimate) {
+      const ctx = this.ctx!;
       const bufSize = Math.floor(ctx.sampleRate * 0.8);
       const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
       const data = buf.getChannelData(0);
@@ -848,15 +746,14 @@ export class AudioEngine {
       const filter = ctx.createBiquadFilter();
       filter.type = 'highpass';
       filter.frequency.value = 3000;
-      filter.Q.value = 0.5;
-      const gain = ctx.createGain();
+      const gain = this.getGainNode();
       gain.gain.setValueAtTime(0.08, ctx.currentTime + chordDelay);
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + chordDelay + 0.8);
       src.connect(filter);
       filter.connect(gain);
-      gain.connect(this.masterGain!);
       src.start(ctx.currentTime + chordDelay);
-      src.stop(ctx.currentTime + chordDelay + 0.85);
+      src.stop(ctx.currentTime + chordDelay + 0.8);
+      this.releaseGainNode(gain, chordDelay + 0.8);
     }
   }
 

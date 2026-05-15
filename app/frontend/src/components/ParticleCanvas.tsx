@@ -85,6 +85,11 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
   // Offscreen canvas for pre-rendered star field (rebuilt only on resize / level change)
   const starCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const starCanvasLevelRef = useRef<number>(-1); // level when starCanvas was last drawn
+  
+  // Persistent layer for groundglow and trails — allows "infinite" particles without perf cost
+  const persistentCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const persistentCtxRef = useRef<CanvasRenderingContext2D | null>(null);
+
   // Cached aurora gradient (rebuilt only on resize)
   const auroraGradientRef = useRef<CanvasGradient | null>(null);
   const auroraGradientSizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 });
@@ -290,56 +295,64 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
         });
       }
 
-      // Trailing sparkles
-      for (let i = 0; i < Math.floor(8 * intensity); i++) {
-        const angle = Math.random() * Math.PI * 2;
-        const speed = 1 + Math.random() * 2;
-        newParticles.push({
-          x,
-          y,
-          vx: Math.cos(angle) * speed,
-          vy: Math.sin(angle) * speed,
-          life: 1,
-          maxLife: 80 + Math.random() * 40,
-          color: '#FFFFFF',
-          size: 1.5 + Math.random() * 2,
-          type: 'trail',
-          rotation: 0,
-          rotationSpeed: 0,
-        });
+      // Trailing sparkles — BAKE into persistent layer
+      if (persistentCtxRef.current) {
+        const pctx = persistentCtxRef.current;
+        const trailCount = Math.floor(8 * intensity);
+        for (let i = 0; i < trailCount; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const speed = 1 + Math.random() * 2;
+          const tx = x + Math.cos(angle) * speed * 5;
+          const ty = y + Math.sin(angle) * speed * 5;
+          
+          const sprite = getGlowSprite('#FFFFFF', 2 + Math.random() * 2);
+          const half = sprite.width / 2;
+          pctx.globalAlpha = 0.5;
+          pctx.globalCompositeOperation = 'lighter';
+          pctx.drawImage(sprite, tx - half, ty - half);
+          pctx.globalCompositeOperation = 'source-over';
+        }
       }
 
-        // ── Collectible BURST mixing — one item erupts from fireworks ─────────────
+        // ── Collectible BURST mixing — every item has a chance to erupt ────────────
       const coll = collectionRef.current;
-      if (coll && coll.collected && Object.keys(coll.collected).length > 0) {
-        // 50% chance to burst a single collected item into the firework
-        const itemKeys = Object.entries(coll.collected).filter(([,c]) => c > 0).map(([k]) => k);
-        if (itemKeys.length > 0 && Math.random() < 0.50) {
-          const emoji = itemKeys[Math.floor(Math.random() * itemKeys.length)];
-          const collectedCount = coll.collected[emoji] || 1;
-          const itemIntensity = intensity * (1 + Math.log(collectedCount + 1) * 0.2);
-          const burstParticles = spawnCollectibleBurst(emoji, x, y, themeRef.current, itemIntensity);
-          newParticles.push(
-            ...burstParticles.map((bp) => ({
-              x: bp.x,
-              y: bp.y,
-              vx: bp.vx,
-              vy: bp.vy,
-              life: bp.life,
-              maxLife: bp.maxLife,
-              color: bp.color,
-              size: bp.size,
-              type: bp.type as Particle['type'],
-              rotation: bp.rotation,
-              rotationSpeed: bp.rotationSpeed,
-              orbitAngle: bp.orbitAngle,
-              orbitRadius: bp.orbitRadius,
-              orbitSpeed: bp.orbitSpeed,
-              breathPhase: bp.breathPhase,
-              breathSpeed: bp.breathSpeed,
-              gravity: (bp as unknown as Record<string, number>).gravity,
-            }))
-          );
+      if (coll && coll.collected) {
+        const itemEntries = Object.entries(coll.collected).filter(([, c]) => c > 0);
+        const uniqueItems = itemEntries.length;
+        
+        if (uniqueItems > 0) {
+          // Formula: base 20% + 3% per unique item
+          const mixChance = Math.min(0.20 + uniqueItems * 0.03, 0.60);
+          
+          for (const [emoji, collectedCount] of itemEntries) {
+            // Each item has an independent chance to mix in
+            if (Math.random() < mixChance) {
+              const itemIntensity = intensity * (1 + Math.log(collectedCount + 1) * 0.2);
+              const burstParticles = spawnCollectibleBurst(emoji, x, y, themeRef.current, itemIntensity);
+              
+              newParticles.push(
+                ...burstParticles.map((bp) => ({
+                  x: bp.x,
+                  y: bp.y,
+                  vx: bp.vx,
+                  vy: bp.vy,
+                  life: bp.life,
+                  maxLife: bp.maxLife,
+                  color: bp.color,
+                  size: bp.size,
+                  type: bp.type as Particle['type'],
+                  rotation: bp.rotation,
+                  rotationSpeed: bp.rotationSpeed,
+                  orbitAngle: bp.orbitAngle,
+                  orbitRadius: bp.orbitRadius,
+                  orbitSpeed: bp.orbitSpeed,
+                  breathPhase: bp.breathPhase,
+                  breathSpeed: bp.breathSpeed,
+                  gravity: (bp as unknown as Record<string, number>).gravity,
+                }))
+              );
+            }
+          }
         }
 
         // ── Combo effect trigger ─────────────────────────────────────────────────────────────────
@@ -369,33 +382,36 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
               breathSpeed: cp.breathSpeed,
             }))
           );
-          // Combo triggers a small burst from one random collected item
-          if (itemKeys.length > 0) {
-            const comboEmoji = itemKeys[Math.floor(Math.random() * itemKeys.length)];
-            const comboCount = coll.collected[comboEmoji] || 1;
-            const comboBurstIntensity = intensity * (1 + Math.log(comboCount + 1) * 0.15);
-            const comboBurst = spawnCollectibleBurst(comboEmoji, x, y, themeRef.current, comboBurstIntensity);
-            newParticles.push(
-              ...comboBurst.map((bp) => ({
-                x: bp.x,
-                y: bp.y,
-                vx: bp.vx,
-                vy: bp.vy,
-                life: bp.life,
-                maxLife: bp.maxLife,
-                color: bp.color,
-                size: bp.size,
-                type: bp.type as Particle['type'],
-                rotation: bp.rotation,
-                rotationSpeed: bp.rotationSpeed,
-                orbitAngle: bp.orbitAngle,
-                orbitRadius: bp.orbitRadius,
-                orbitSpeed: bp.orbitSpeed,
-                breathPhase: bp.breathPhase,
-                breathSpeed: bp.breathSpeed,
-                gravity: (bp as unknown as Record<string, number>).gravity,
-              }))
-            );
+          // Combo triggers additional bursts from all collected items
+          if (uniqueItems > 0) {
+            for (const [emoji, collectedCount] of itemEntries) {
+              // High chance during combo
+              if (Math.random() < 0.8) {
+                const comboBurstIntensity = intensity * (1 + Math.log(collectedCount + 1) * 0.15);
+                const comboBurst = spawnCollectibleBurst(emoji, x, y, themeRef.current, comboBurstIntensity);
+                newParticles.push(
+                  ...comboBurst.map((bp) => ({
+                    x: bp.x,
+                    y: bp.y,
+                    vx: bp.vx,
+                    vy: bp.vy,
+                    life: bp.life,
+                    maxLife: bp.maxLife,
+                    color: bp.color,
+                    size: bp.size,
+                    type: bp.type as Particle['type'],
+                    rotation: bp.rotation,
+                    rotationSpeed: bp.rotationSpeed,
+                    orbitAngle: bp.orbitAngle,
+                    orbitRadius: bp.orbitRadius,
+                    orbitSpeed: bp.orbitSpeed,
+                    breathPhase: bp.breathPhase,
+                    breathSpeed: bp.breathSpeed,
+                    gravity: (bp as unknown as Record<string, number>).gravity,
+                  }))
+                );
+              }
+            }
           }
         }
       }
@@ -444,54 +460,56 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
         });
       }
 
-      // Sparkle trail behind
-      for (let i = 0; i < 8; i++) {
-        newParticles.push({
-          x: x + (Math.random() - 0.5) * 30,
-          y: y + Math.random() * 20,
-          vx: (Math.random() - 0.5) * 0.5,
-          vy: -1 - Math.random() * 2,
-          life: 1,
-          maxLife: 80 + Math.random() * 40,
-          color: '#FFFFFF',
-          size: 1 + Math.random() * 2,
-          type: 'trail',
-          rotation: 0,
-          rotationSpeed: 0,
-        });
+      // Sparkle trail behind — BAKE into persistent layer
+      if (persistentCtxRef.current) {
+        const pctx = persistentCtxRef.current;
+        for (let i = 0; i < 8; i++) {
+          const tx = x + (Math.random() - 0.5) * 30;
+          const ty = y + Math.random() * 20;
+          const sprite = getGlowSprite('#FFFFFF', 1 + Math.random() * 2);
+          const half = sprite.width / 2;
+          pctx.globalAlpha = 0.4;
+          pctx.globalCompositeOperation = 'lighter';
+          pctx.drawImage(sprite, tx - half, ty - half);
+          pctx.globalCompositeOperation = 'source-over';
+        }
       }
 
       // Collectible burst on swipe
       const coll = collectionRef.current;
-      if (coll && coll.collected && Object.keys(coll.collected).length > 0) {
-        const itemKeys = Object.entries(coll.collected).filter(([,c]) => c > 0).map(([k]) => k);
-        if (itemKeys.length > 0 && Math.random() < 0.50) {
-          const emoji = itemKeys[Math.floor(Math.random() * itemKeys.length)];
-          const collectedCount = coll.collected[emoji] || 1;
-          const burstParticles = spawnCollectibleBurst(
-            emoji, x, y, themeRef.current, 1 + Math.log(collectedCount + 1) * 0.25
-          );
-          newParticles.push(
-            ...burstParticles.map((bp) => ({
-              x: bp.x,
-              y: bp.y,
-              vx: bp.vx,
-              vy: bp.vy,
-              life: bp.life,
-              maxLife: bp.maxLife,
-              color: bp.color,
-              size: bp.size,
-              type: bp.type as Particle['type'],
-              rotation: bp.rotation,
-              rotationSpeed: bp.rotationSpeed,
-              orbitAngle: bp.orbitAngle,
-                orbitRadius: bp.orbitRadius,
-                orbitSpeed: bp.orbitSpeed,
-                breathPhase: bp.breathPhase,
-                breathSpeed: bp.breathSpeed,
-                gravity: (bp as unknown as Record<string, number>).gravity,
-              }))
-            );
+      if (coll && coll.collected) {
+        const itemEntries = Object.entries(coll.collected).filter(([, c]) => c > 0);
+        const uniqueItems = itemEntries.length;
+
+        if (uniqueItems > 0) {
+          const mixChance = Math.min(0.20 + uniqueItems * 0.03, 0.50); // Slightly lower chance for swipes
+          for (const [emoji, collectedCount] of itemEntries) {
+            if (Math.random() < mixChance) {
+              const itemIntensity = 1 + Math.log(collectedCount + 1) * 0.25;
+              const burstParticles = spawnCollectibleBurst(emoji, x, y, themeRef.current, itemIntensity);
+              newParticles.push(
+                ...burstParticles.map((bp) => ({
+                  x: bp.x,
+                  y: bp.y,
+                  vx: bp.vx,
+                  vy: bp.vy,
+                  life: bp.life,
+                  maxLife: bp.maxLife,
+                  color: bp.color,
+                  size: bp.size,
+                  type: bp.type as Particle['type'],
+                  rotation: bp.rotation,
+                  rotationSpeed: bp.rotationSpeed,
+                  orbitAngle: bp.orbitAngle,
+                  orbitRadius: bp.orbitRadius,
+                  orbitSpeed: bp.orbitSpeed,
+                  breathPhase: bp.breathPhase,
+                  breathSpeed: bp.breathSpeed,
+                  gravity: (bp as unknown as Record<string, number>).gravity,
+                }))
+              );
+            }
+          }
         }
       }
 
@@ -528,35 +546,39 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
 
       // Collectible burst on down swipe
       const collDown = collectionRef.current;
-      if (collDown && collDown.collected && Object.keys(collDown.collected).length > 0) {
-        const itemKeys = Object.entries(collDown.collected).filter(([,c]) => c > 0).map(([k]) => k);
-        if (itemKeys.length > 0 && Math.random() < 0.50) {
-          const emoji = itemKeys[Math.floor(Math.random() * itemKeys.length)];
-          const collectedCount = collDown.collected[emoji] || 1;
-          const burstParticles = spawnCollectibleBurst(
-            emoji, x, y, themeRef.current, 1 + Math.log(collectedCount + 1) * 0.25
-          );
-          newParticles.push(
-            ...burstParticles.map((bp) => ({
-              x: bp.x,
-              y: bp.y,
-              vx: bp.vx,
-              vy: bp.vy,
-              life: bp.life,
-              maxLife: bp.maxLife,
-              color: bp.color,
-              size: bp.size,
-              type: bp.type as Particle['type'],
-              rotation: bp.rotation,
-              rotationSpeed: bp.rotationSpeed,
-                orbitAngle: bp.orbitAngle,
-                orbitRadius: bp.orbitRadius,
-                orbitSpeed: bp.orbitSpeed,
-                breathPhase: bp.breathPhase,
-                breathSpeed: bp.breathSpeed,
-                gravity: (bp as unknown as Record<string, number>).gravity,
-              }))
-            );
+      if (collDown && collDown.collected) {
+        const itemEntries = Object.entries(collDown.collected).filter(([, c]) => c > 0);
+        const uniqueItems = itemEntries.length;
+
+        if (uniqueItems > 0) {
+          const mixChance = Math.min(0.20 + uniqueItems * 0.03, 0.50);
+          for (const [emoji, collectedCount] of itemEntries) {
+            if (Math.random() < mixChance) {
+              const itemIntensity = 1 + Math.log(collectedCount + 1) * 0.25;
+              const burstParticles = spawnCollectibleBurst(emoji, x, y, themeRef.current, itemIntensity);
+              newParticles.push(
+                ...burstParticles.map((bp) => ({
+                  x: bp.x,
+                  y: bp.y,
+                  vx: bp.vx,
+                  vy: bp.vy,
+                  life: bp.life,
+                  maxLife: bp.maxLife,
+                  color: bp.color,
+                  size: bp.size,
+                  type: bp.type as Particle['type'],
+                  rotation: bp.rotation,
+                  rotationSpeed: bp.rotationSpeed,
+                  orbitAngle: bp.orbitAngle,
+                  orbitRadius: bp.orbitRadius,
+                  orbitSpeed: bp.orbitSpeed,
+                  breathPhase: bp.breathPhase,
+                  breathSpeed: bp.breathSpeed,
+                  gravity: (bp as unknown as Record<string, number>).gravity,
+                }))
+              );
+            }
+          }
         }
       }
 
@@ -594,56 +616,58 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
         });
       }
 
-      // Trailing sparkles that fade behind
-      for (let i = 0; i < 12; i++) {
-        newParticles.push({
-          x: startX + (Math.random() - 0.5) * 20,
-          y: startY + (Math.random() - 0.5) * 20,
-          vx: dirMultiplier * (0.5 + Math.random()),
-          vy: (Math.random() - 0.5) * 1.5,
-          life: 1,
-          maxLife: 60 + Math.random() * 30,
-          color: '#FFFFFF',
-          size: 1 + Math.random() * 2,
-          type: 'trail',
-          rotation: 0,
-          rotationSpeed: 0,
-        });
+      // Trailing sparkles that fade behind — BAKE into persistent layer
+      if (persistentCtxRef.current) {
+        const pctx = persistentCtxRef.current;
+        for (let i = 0; i < 12; i++) {
+          const tx = startX + (Math.random() - 0.5) * 20;
+          const ty = startY + (Math.random() - 0.5) * 20;
+          const sprite = getGlowSprite('#FFFFFF', 1 + Math.random() * 2);
+          const half = sprite.width / 2;
+          pctx.globalAlpha = 0.5;
+          pctx.globalCompositeOperation = 'lighter';
+          pctx.drawImage(sprite, tx - half, ty - half);
+          pctx.globalCompositeOperation = 'source-over';
+        }
       }
 
       // Collectible burst on horizontal swipe
       const collHoriz = collectionRef.current;
-      if (collHoriz && collHoriz.collected && Object.keys(collHoriz.collected).length > 0) {
-        const itemKeys = Object.entries(collHoriz.collected).filter(([,c]) => c > 0).map(([k]) => k);
-        if (itemKeys.length > 0 && Math.random() < 0.50) {
-          const emoji = itemKeys[Math.floor(Math.random() * itemKeys.length)];
-          const collectedCount = collHoriz.collected[emoji] || 1;
+      if (collHoriz && collHoriz.collected) {
+        const itemEntries = Object.entries(collHoriz.collected).filter(([, c]) => c > 0);
+        const uniqueItems = itemEntries.length;
+
+        if (uniqueItems > 0) {
+          const mixChance = Math.min(0.20 + uniqueItems * 0.03, 0.50);
           const cx = (startX + endX) / 2;
           const cy = (startY + endY) / 2;
-          const burstParticles = spawnCollectibleBurst(
-            emoji, cx, cy, themeRef.current, 1 + Math.log(collectedCount + 1) * 0.25
-          );
-          newParticles.push(
-            ...burstParticles.map((bp) => ({
-              x: bp.x,
-              y: bp.y,
-              vx: bp.vx,
-              vy: bp.vy,
-              life: bp.life,
-              maxLife: bp.maxLife,
-              color: bp.color,
-              size: bp.size,
-              type: bp.type as Particle['type'],
-              rotation: bp.rotation,
-                rotationSpeed: bp.rotationSpeed,
-                orbitAngle: bp.orbitAngle,
-                orbitRadius: bp.orbitRadius,
-                orbitSpeed: bp.orbitSpeed,
-                breathPhase: bp.breathPhase,
-                breathSpeed: bp.breathSpeed,
-                gravity: (bp as unknown as Record<string, number>).gravity,
-              }))
-            );
+          for (const [emoji, collectedCount] of itemEntries) {
+            if (Math.random() < mixChance) {
+              const itemIntensity = 1 + Math.log(collectedCount + 1) * 0.25;
+              const burstParticles = spawnCollectibleBurst(emoji, cx, cy, themeRef.current, itemIntensity);
+              newParticles.push(
+                ...burstParticles.map((bp) => ({
+                  x: bp.x,
+                  y: bp.y,
+                  vx: bp.vx,
+                  vy: bp.vy,
+                  life: bp.life,
+                  maxLife: bp.maxLife,
+                  color: bp.color,
+                  size: bp.size,
+                  type: bp.type as Particle['type'],
+                  rotation: bp.rotation,
+                  rotationSpeed: bp.rotationSpeed,
+                  orbitAngle: bp.orbitAngle,
+                  orbitRadius: bp.orbitRadius,
+                  orbitSpeed: bp.orbitSpeed,
+                  breathPhase: bp.breathPhase,
+                  breathSpeed: bp.breathSpeed,
+                  gravity: (bp as unknown as Record<string, number>).gravity,
+                }))
+              );
+            }
+          }
         }
       }
 
@@ -723,23 +747,22 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
       const startY = canvasRef.current?.height || 800;
       const newParticles: Particle[] = [];
 
-      // Rising trail particles
-      const riseSteps = 15;
-      for (let i = 0; i < riseSteps; i++) {
-        const progress = i / riseSteps;
-        newParticles.push({
-          x: x + (Math.random() - 0.5) * 4,
-          y: startY - (startY - y) * progress,
-          vx: (Math.random() - 0.5) * 0.3,
-          vy: -(startY - y) / 40,
-          life: 1,
-          maxLife: 20 + i * 3,
-          color: colors[Math.floor(Math.random() * colors.length)],
-          size: 2 + Math.random() * 2,
-          type: 'trail',
-          rotation: 0,
-          rotationSpeed: 0,
-        });
+      // Rising trail particles — BAKE into persistent layer
+      if (persistentCtxRef.current) {
+        const pctx = persistentCtxRef.current;
+        const riseSteps = 15;
+        for (let i = 0; i < riseSteps; i++) {
+          const progress = i / riseSteps;
+          const tx = x + (Math.random() - 0.5) * 4;
+          const ty = startY - (startY - y) * progress;
+          
+          const sprite = getGlowSprite(colors[Math.floor(Math.random() * colors.length)], 2 + Math.random() * 2);
+          const half = sprite.width / 2;
+          pctx.globalAlpha = 0.4;
+          pctx.globalCompositeOperation = 'lighter';
+          pctx.drawImage(sprite, tx - half, ty - half);
+          pctx.globalCompositeOperation = 'source-over';
+        }
       }
 
       addParticles(newParticles);
@@ -1584,27 +1607,24 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
           createHorizontalSwipeEffect(start.x, start.y, endX, endY, dir);
         }
 
-        // Level 5+: ground glow residue along swipe path
-        if (growthRef.current.level >= 5 && path.length > 5) {
+        // Level 5+: ground glow residue along swipe path — BAKE into persistent layer
+        if (growthRef.current.level >= 5 && path.length > 5 && persistentCtxRef.current) {
+          const pctx = persistentCtxRef.current;
           const glowCount = Math.min(5, Math.floor(path.length / 10));
-          const glowParticles: Particle[] = [];
+          
           for (let i = 0; i < glowCount; i++) {
             const pt = path[Math.floor((path.length * (i + 1)) / (glowCount + 1))];
-            glowParticles.push({
-              x: pt.x + (Math.random() - 0.5) * 10,
-              y: pt.y + (Math.random() - 0.5) * 10,
-              vx: 0,
-              vy: 0,
-              life: 1,
-              maxLife: 150 + Math.random() * 100,
-              color: themeRef.current.particleColors[Math.floor(Math.random() * themeRef.current.particleColors.length)],
-              size: 2 + Math.random() * 2,
-              type: 'groundglow',
-              rotation: 0,
-              rotationSpeed: 0,
-            });
+            const color = themeRef.current.particleColors[Math.floor(Math.random() * themeRef.current.particleColors.length)];
+            const size = 2 + Math.random() * 2;
+            
+            // Draw directly to persistent layer
+            const sprite = getGlowSprite(color, size * 8);
+            const half = sprite.width / 2;
+            pctx.globalAlpha = 0.6;
+            pctx.globalCompositeOperation = 'lighter';
+            pctx.drawImage(sprite, pt.x - half, pt.y - half);
+            pctx.globalCompositeOperation = 'source-over';
           }
-          addParticles(glowParticles);
         }
 
         touchStartRef.current = null;
@@ -1884,6 +1904,157 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
         return;
       }
 
+      if (p.type === 'firefly' || p.type === 'ember' || p.type === 'warmth' || p.type === 'bell') {
+        const pulse = p.breathPhase != null ? 0.8 + 0.2 * Math.sin(p.breathPhase) : 1;
+        drawGlow(0, 0, p.size * 4 * pulse, p.color, 0.2);
+        ctx.globalAlpha = alpha * pulse;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(0, 0, p.size * pulse, 0, Math.PI * 2);
+        ctx.fill();
+        if (p.type === 'bell') {
+          ctx.fillStyle = '#FFFFFF';
+          ctx.globalAlpha = alpha * 0.4;
+          ctx.beginPath();
+          ctx.arc(0, -p.size * 0.2, p.size * 0.3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        return;
+      }
+
+      if (p.type === 'maple' || p.type === 'wind' || p.type === 'sprout') {
+        ctx.save();
+        ctx.rotate(p.rotation);
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = alpha;
+        if (p.type === 'maple') {
+          // Simplified maple leaf (3 lobes)
+          for (let i = 0; i < 3; i++) {
+            ctx.rotate((Math.PI * 2) / 3);
+            ctx.beginPath();
+            ctx.ellipse(0, -p.size * 0.6, p.size * 0.4, p.size * 0.8, 0, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        } else if (p.type === 'wind') {
+          ctx.beginPath();
+          ctx.ellipse(0, 0, p.size * 1.5, p.size * 0.4, 0, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          // sprout
+          ctx.beginPath();
+          ctx.ellipse(-p.size * 0.3, 0, p.size * 0.4, p.size * 0.7, -0.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.ellipse(p.size * 0.3, 0, p.size * 0.4, p.size * 0.7, 0.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        return;
+      }
+
+      if (p.type === 'pinecone' || p.type === 'acorn') {
+        ctx.save();
+        ctx.rotate(p.rotation);
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, p.size * 0.7, p.size, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Cap for acorn
+        if (p.type === 'acorn') {
+          ctx.fillStyle = 'rgba(0,0,0,0.2)';
+          ctx.beginPath();
+          ctx.arc(0, -p.size * 0.4, p.size * 0.7, Math.PI, 0);
+          ctx.fill();
+        }
+        ctx.restore();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        return;
+      }
+
+      if (p.type === 'spore' || p.type === 'steam') {
+        ctx.globalAlpha = alpha * 0.4;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(0, 0, p.size * 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        return;
+      }
+
+      if (p.type === 'wave' || p.type === 'shell' || p.type === 'coral') {
+        ctx.save();
+        ctx.rotate(p.rotation);
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = alpha * 0.7;
+        ctx.beginPath();
+        if (p.type === 'wave') {
+          ctx.arc(0, 0, p.size, 0, Math.PI, true);
+        } else if (p.type === 'shell') {
+          ctx.arc(0, 0, p.size, -Math.PI / 4, Math.PI / 4);
+        } else {
+          // coral - simple branch
+          ctx.moveTo(0, 0);
+          ctx.lineTo(0, -p.size * 2);
+          ctx.moveTo(0, -p.size);
+          ctx.lineTo(p.size, -p.size * 1.5);
+        }
+        ctx.stroke();
+        ctx.restore();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        return;
+      }
+
+      if (p.type === 'jellyfish' || p.type === 'starfish' || p.type === 'snowman') {
+        ctx.save();
+        ctx.rotate(p.rotation);
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = alpha * 0.8;
+        if (p.type === 'jellyfish') {
+          ctx.beginPath();
+          ctx.arc(0, 0, p.size, Math.PI, 0);
+          ctx.fill();
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = p.color;
+          for (let i = -1; i <= 1; i++) {
+            ctx.beginPath();
+            ctx.moveTo(i * p.size * 0.4, 0);
+            ctx.lineTo(i * p.size * 0.4, p.size * 1.2);
+            ctx.stroke();
+          }
+        } else if (p.type === 'starfish') {
+          const spikes = 5;
+          for (let i = 0; i < spikes; i++) {
+            ctx.rotate((Math.PI * 2) / spikes);
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(p.size, 0);
+            ctx.lineTo(0, p.size * 0.2);
+            ctx.fill();
+          }
+        } else {
+          // snowman
+          ctx.beginPath();
+          ctx.arc(0, p.size * 0.5, p.size * 0.8, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(0, -p.size * 0.5, p.size * 0.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        return;
+      }
+
       // ── combo particle types ─────────────────────────────────────────
       if (p.type === 'combo_vortex') {
         const breath = p.breathPhase != null
@@ -2050,6 +2221,15 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
     const resize = () => {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
+      
+      // Handle persistent layer resize
+      if (!persistentCanvasRef.current) {
+        persistentCanvasRef.current = document.createElement('canvas');
+      }
+      persistentCanvasRef.current.width = canvas.width;
+      persistentCanvasRef.current.height = canvas.height;
+      persistentCtxRef.current = persistentCanvasRef.current.getContext('2d');
+
       // Invalidate cached offscreen canvases on resize
       starCanvasLevelRef.current = -1;
       auroraGradientRef.current = null;
@@ -2166,6 +2346,23 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
         }
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, w, h);
+      }
+
+      // ── Persistent Layer (Groundglow / Trails) ──────────────────────────
+      // This layer doesn't clear every frame. Instead, it "fades" by drawing a 
+      // semi-transparent black overlay or using globalAlpha on a self-copy.
+      if (persistentCtxRef.current && persistentCanvasRef.current) {
+        const pctx = persistentCtxRef.current;
+        pctx.globalCompositeOperation = 'copy';
+        pctx.globalAlpha = 0.94; // Fade rate
+        pctx.drawImage(persistentCanvasRef.current, 0, 0);
+        pctx.globalCompositeOperation = 'source-over';
+        pctx.globalAlpha = 1;
+
+        // Draw the persistent layer onto the main canvas
+        ctx.globalAlpha = 0.8; // Subtle presence
+        ctx.drawImage(persistentCanvasRef.current, 0, 0);
+        ctx.globalAlpha = 1;
       }
 
       // Starfield twinkling at level 3+
