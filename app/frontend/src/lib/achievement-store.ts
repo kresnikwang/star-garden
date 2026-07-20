@@ -17,13 +17,22 @@ export interface AchievementStore {
   shareCount: number;
 }
 
-// Load from localStorage
+// In-memory cache — avoid JSON.parse on every gesture
+let memoryStore: AchievementStore | null = null;
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+// Load from localStorage (cached after first read)
 export function loadStore(): AchievementStore {
+  if (memoryStore) return memoryStore;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      memoryStore = JSON.parse(raw) as AchievementStore;
+      return memoryStore;
+    }
   } catch { /* ignore */ }
-  return defaultStore();
+  memoryStore = defaultStore();
+  return memoryStore;
 }
 
 function defaultStore(): AchievementStore {
@@ -39,7 +48,15 @@ function defaultStore(): AchievementStore {
 }
 
 function saveStore(store: AchievementStore) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+  memoryStore = store;
+  // Debounce disk writes under rapid gesture spam
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+    } catch { /* ignore quota */ }
+    persistTimer = null;
+  }, 200);
 }
 
 // Get count for a specific achievement

@@ -27,6 +27,8 @@ import {
   getCompletionStats,
   triggerAchievement,
 } from '@/lib/achievement-store';
+import { CollectibleIcon } from '@/components/CollectibleIcon';
+import { StyleIcon, gestureIconKind } from '@/components/StyleIcon';
 
 export default function Game() {
   const navigate = useNavigate();
@@ -96,7 +98,7 @@ export default function Game() {
     if (hour >= 0 && hour < 5 && !growth.hiddenDiscoveries.includes('night_owl')) {
       const updated = discoverHidden(themeId, growth, 'night_owl');
       setGrowth(updated);
-      showDiscovery('🦉 发现彩蛋：夜行者');
+      showDiscovery('发现彩蛋：夜行者');
     }
   }, []);
 
@@ -129,12 +131,12 @@ export default function Game() {
           // Discovery: first swipe
           if (!updatedGrowth.hiddenDiscoveries.includes('first_swipe')) {
             updatedGrowth = discoverHidden(themeId, updatedGrowth, 'first_swipe');
-            showDiscovery('🌈 发现彩蛋：初次光轨');
+            showDiscovery('发现彩蛋：初次光轨');
           }
           // Discovery: 50 swipes
           if (updatedGrowth.totalSwipes >= 50 && !updatedGrowth.hiddenDiscoveries.includes('rainbow_trail')) {
             updatedGrowth = discoverHidden(themeId, updatedGrowth, 'rainbow_trail');
-            showDiscovery('🌈 发现彩蛋：彩虹轨迹');
+            showDiscovery('发现彩蛋：彩虹轨迹');
           }
           audioRef.current?.playNoteByPosition(theme, event.y, window.innerHeight);
           break;
@@ -146,7 +148,7 @@ export default function Game() {
           // Discovery: big firework (3+ seconds)
           if (chargeTime >= 3000 && !updatedGrowth.hiddenDiscoveries.includes('big_firework')) {
             updatedGrowth = discoverHidden(themeId, updatedGrowth, 'big_firework');
-            showDiscovery('🎆 发现彩蛋：超级烟花');
+            showDiscovery('发现彩蛋：超级烟花');
           }
           // Stop charge sound and play explosion
           audioRef.current?.stopChargeSound();
@@ -163,12 +165,12 @@ export default function Game() {
           // Discovery: first nebula
           if (!updatedGrowth.hiddenDiscoveries.includes('nebula_born')) {
             updatedGrowth = discoverHidden(themeId, updatedGrowth, 'nebula_born');
-            showDiscovery('🌌 发现彩蛋：星云诞生');
+            showDiscovery('发现彩蛋：星云诞生');
           }
           // Discovery: 10 nebulas
           if (updatedGrowth.totalCircles >= 10 && !updatedGrowth.hiddenDiscoveries.includes('galaxy_maker')) {
             updatedGrowth = discoverHidden(themeId, updatedGrowth, 'galaxy_maker');
-            showDiscovery('⭐ 发现彩蛋：造星者');
+            showDiscovery('发现彩蛋：造星者');
           }
           audioRef.current?.playNoteByPosition(theme, event.y, window.innerHeight);
           break;
@@ -217,24 +219,24 @@ export default function Game() {
       const newAchieve = trackGesture(); // always count as gesture
       if (event.type === 'tap') {
         const u = triggerAchievement('first_firework');
-        if (u.length) showDiscovery('🎆 成就解锁：初见烟火');
+        if (u.length) showDiscovery('成就解锁：初见烟火');
       } else if (event.type === 'swipe') {
         const u = triggerAchievement('first_swipe');
-        if (u.length) showDiscovery('💫 成就解锁：轻扫流星');
+        if (u.length) showDiscovery('成就解锁：轻扫流星');
       } else if (event.type === 'longpress') {
         const u = triggerAchievement('first_long_press');
-        if (u.length) showDiscovery('⏳ 成就解锁：长情陪伴');
+        if (u.length) showDiscovery('成就解锁：长情陪伴');
       } else if (event.type === 'pinch') {
         const u = triggerAchievement('first_pinch');
-        if (u.length) showDiscovery('🤏 成就解锁：天地之间');
+        if (u.length) showDiscovery('成就解锁：天地之间');
       } else if (event.type === 'combo_triple_tap') {
         trackCombo();
         const u = triggerAchievement('first_triple_tap');
-        if (u.length) showDiscovery('🌸 成就解锁：三重绽放');
+        if (u.length) showDiscovery('成就解锁：三重绽放');
       } else if (event.type === 'combo_dual_press') {
         trackCombo();
         const u = triggerAchievement('first_dual_press');
-        if (u.length) showDiscovery('🔗 成就解锁：双指连线');
+        if (u.length) showDiscovery('成就解锁：双指连线');
       } else if (event.type === 'combo_circle_pinch') {
         trackCombo();
       }
@@ -243,7 +245,7 @@ export default function Game() {
       // Discovery: combo master (5 combos)
       if (updatedGrowth.totalCombos >= 5 && !updatedGrowth.hiddenDiscoveries.includes('combo_master')) {
         updatedGrowth = discoverHidden(themeId, updatedGrowth, 'combo_master');
-        showDiscovery('⚡ 发现彩蛋：组合大师');
+        showDiscovery('发现彩蛋：组合大师');
       }
 
       // Add XP
@@ -251,12 +253,12 @@ export default function Game() {
       setGrowth(afterXP);
 
       if (leveledUp) {
-        setLevelUpMsg(`🎉 升级到 Lv.${afterXP.level}!`);
+        setLevelUpMsg(`升级到 Lv.${afterXP.level}`);
         setTimeout(() => setLevelUpMsg(null), 3000);
       }
 
       if (newUnlocks.length > 0) {
-        setUnlockMsg(`✨ 解锁新手势：${newUnlocks.join(', ')}`);
+        setUnlockMsg(`解锁新手势：${newUnlocks.join(' · ')}`);
         setTimeout(() => setUnlockMsg(null), 4000);
       }
 
@@ -289,9 +291,9 @@ export default function Game() {
         setTimeout(() => setShowCollect(null), 2500);
         setNextCollectIn(0);
 
-        // Show collectible fusion hint
+        // Show collectible fusion hint (text only — no Apple emoji)
         setTimeout(() => {
-          showDiscovery(`${emoji} ${effectName}已融入烟花！`);
+          showDiscovery(`「${effectName}」已融入烟花`);
         }, 1600);
 
         // Check for combo tier unlocks
@@ -316,7 +318,7 @@ export default function Game() {
         if (totalItems >= 20 && !afterXP.hiddenDiscoveries.includes('collector')) {
           const discoveredState = discoverHidden(themeId, afterXP, 'collector');
           setGrowth(discoveredState);
-          showDiscovery('🏆 发现彩蛋：收藏家');
+          showDiscovery('发现彩蛋：收藏家');
         }
 
         // Discovery: theme_complete — all available items collected
@@ -327,7 +329,7 @@ export default function Game() {
         if (allCollected && !afterXP.hiddenDiscoveries.includes('theme_complete')) {
           const discoveredState = discoverHidden(themeId, afterXP, 'theme_complete');
           setGrowth(discoveredState);
-          showDiscovery('🎑 发现彩蛋：四季收藏家');
+          showDiscovery('发现彩蛋：四季收藏家');
         }
       }
 
@@ -347,7 +349,7 @@ export default function Game() {
     setGrowth(afterXP);
 
     if (leveledUp) {
-      setLevelUpMsg(`🎉 升级到 Lv.${afterXP.level}!`);
+      setLevelUpMsg(`升级到 Lv.${afterXP.level}`);
       setTimeout(() => setLevelUpMsg(null), 3000);
     }
 
@@ -355,11 +357,10 @@ export default function Game() {
     if (afterXP.breathingSessions >= 3 && !afterXP.hiddenDiscoveries.includes('breath_master')) {
       const discoveredState = discoverHidden(themeId, afterXP, 'breath_master');
       setGrowth(discoveredState);
-      showDiscovery('🧘 发现彩蛋：呼吸大师');
+      showDiscovery('发现彩蛋：呼吸大师');
     }
 
-    setShowCollect({ emoji: '🧘', x: window.innerWidth / 2, y: window.innerHeight / 2 });
-    setTimeout(() => setShowCollect(null), 1500);
+    showDiscovery('呼吸完成 · +10 XP');
   }, [growth]);
 
   const totalCollected = Object.values(collection.collected).reduce(
@@ -439,34 +440,36 @@ export default function Game() {
           <div className="flex gap-2">
             <button
               onClick={() => navigate('/garden')}
-              className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white/80 hover:bg-white/20 transition-colors text-sm"
+              className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white/80 hover:bg-white/20 transition-colors"
               title="我的花园"
             >
-              🌿
+              <StyleIcon kind="garden" size={20} color={theme.accentColor} />
             </button>
             <button
               onClick={() => setShowBreathing(true)}
-              className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white/80 hover:bg-white/20 transition-colors text-sm"
+              className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white/80 hover:bg-white/20 transition-colors"
+              title="呼吸引导"
             >
-              🧘
+              <StyleIcon kind="breath" size={20} color={theme.accentColor} />
             </button>
             <button
               onClick={() => navigate('/achievements')}
               className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white/80 hover:bg-white/20 transition-colors relative"
               title="成就"
             >
-              🏆
+              <StyleIcon kind="trophy" size={20} color={theme.accentColor} />
               {achieveStats.unlocked > 0 && (
-                <span className="absolute -top-1 -right-1 bg-purple-500 text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center leading-none">
+                <span className="absolute -top-1 -right-1 bg-purple-500/90 text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center leading-none">
                   {achieveStats.unlocked}
                 </span>
               )}
             </button>
             <button
               onClick={() => setShowShare(true)}
-              className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white/80 hover:bg-white/20 transition-colors text-sm"
+              className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white/80 hover:bg-white/20 transition-colors"
+              title="分享"
             >
-              📤
+              <StyleIcon kind="share" size={20} color={theme.accentColor} />
             </button>
           </div>
         </div>
@@ -492,27 +495,37 @@ export default function Game() {
                 }`}
                 title={unlocked ? gesture.description : `Lv.${gesture.unlockLevel} 解锁`}
               >
-                <span>{gesture.icon}</span>
+                <StyleIcon
+                  kind={gestureIconKind(gesture.id)}
+                  size={14}
+                  color={theme.accentColor}
+                  muted={!unlocked}
+                />
                 <span className="hidden sm:inline">{gesture.name}</span>
-                {!unlocked && <span>🔒</span>}
+                {!unlocked && <StyleIcon kind="lock" size={12} muted />}
               </div>
             );
           })}
         </div>
 
         {nextUnlock && (
-          <p className="text-white/40 text-xs mb-2">
-            下一个解锁：Lv.{nextUnlock.unlockLevel} {nextUnlock.icon} {nextUnlock.name}
+          <p className="text-white/40 text-xs mb-2 flex items-center justify-center gap-1.5">
+            <span>下一个解锁：Lv.{nextUnlock.unlockLevel}</span>
+            <StyleIcon kind={gestureIconKind(nextUnlock.id)} size={14} color={theme.accentColor} />
+            <span>{nextUnlock.name}</span>
           </p>
         )}
 
         <p className="text-white/50 text-xs">
-          🔥 连续{collection.streakDays}天 · 收集 {totalCollected} · 发现 {growth.hiddenDiscoveries.length}/10 彩蛋
+          连续 {collection.streakDays} 天 · 收集 {totalCollected} · 发现 {growth.hiddenDiscoveries.length}/10 彩蛋
           {growth.totalCombos > 0 && ` · 组合技 ${growth.totalCombos}`}
         </p>
 
         {melodyActive && (
-          <p className="text-white/30 text-xs mt-1">🎵 背景旋律已加入</p>
+          <p className="text-white/30 text-xs mt-1 flex items-center justify-center gap-1">
+            <StyleIcon kind="melody" size={12} color={theme.accentColor} />
+            背景旋律已加入
+          </p>
         )}
 
         {/* Collection display */}
@@ -542,17 +555,14 @@ export default function Game() {
 
         <div className="flex justify-center gap-2 mt-3 flex-wrap">
           {theme.collectibleEmojis.map((emoji, i) => (
-            <span
+            <CollectibleIcon
               key={i}
-              className={`text-lg ${
-                collection.collected[emoji]
-                  ? 'opacity-100'
-                  : 'opacity-30 grayscale'
-              }`}
+              emoji={emoji}
+              size={22}
+              color={theme.accentColor}
+              muted={!collection.collected[emoji]}
               title={`${theme.collectibles[i]}: ${collection.collected[emoji] || 0}`}
-            >
-              {emoji}
-            </span>
+            />
           ))}
         </div>
       </div>
@@ -588,26 +598,26 @@ export default function Game() {
       {/* Collection milestone popup */}
       {showCollect && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center pointer-events-none">
-          <div
-            className="flex flex-col items-center animate-[spin_8s_linear_infinite]"
-            style={{
-              animation: 'spin 8s linear infinite',
-            }}
-          >
-            {/* Glow ring behind emoji */}
+          <div className="flex flex-col items-center relative">
+            {/* Soft watercolor glow */}
             <div
-              className="absolute w-32 h-32 rounded-full animate-pulse"
-              style={{ background: `radial-gradient(circle, ${theme.accentColor}30 0%, transparent 70%)` }}
+              className="absolute w-36 h-36 rounded-full animate-pulse"
+              style={{
+                background: `radial-gradient(circle, ${theme.accentColor}40 0%, transparent 70%)`,
+                filter: 'blur(4px)',
+              }}
             />
-            {/* Emoji */}
-            <div className="text-7xl relative z-10 animate-bounce" style={{ animationDuration: '0.6s' }}>
-              {showCollect.emoji}
+            <div className="relative z-10 animate-bounce" style={{ animationDuration: '0.7s' }}>
+              <CollectibleIcon
+                emoji={showCollect.emoji}
+                size={88}
+                color={theme.accentColor}
+                title={showCollect.name}
+              />
             </div>
-            {/* Name */}
             <div className="mt-3 text-white/90 text-sm font-medium tracking-widest bg-white/10 backdrop-blur-md rounded-full px-4 py-1.5 border border-white/20">
               {showCollect.name}
             </div>
-            {/* Label */}
             <div className="mt-2 text-white/50 text-xs">已融入烟花</div>
           </div>
         </div>
@@ -618,8 +628,8 @@ export default function Game() {
         <div className="fixed top-16 left-1/2 -translate-x-1/2 z-10">
           <div className="bg-white/10 backdrop-blur-md rounded-full px-4 py-1 text-white/70 text-xs">
             {dailyVariation.specialEvent === 'meteor_shower'
-              ? '✨ 今日特别：流星雨加倍'
-              : '🎁 今日特别：双倍收集'}
+              ? '今日特别：流星雨加倍'
+              : '今日特别：双倍收集'}
           </div>
         </div>
       )}

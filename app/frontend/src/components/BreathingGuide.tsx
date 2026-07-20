@@ -100,7 +100,7 @@ export function BreathingGuide({ accentColor, onComplete, onClose }: BreathingGu
 
         {!isActive ? (
           <div className="text-center">
-            <p className="text-white/80 text-lg mb-2">🧘 呼吸引导</p>
+            <p className="text-white/80 text-lg mb-2 tracking-wide">呼吸引导</p>
             <p className="text-white/50 text-sm mb-6">
               跟随节奏深呼吸，完成后获得特殊奖励
             </p>
@@ -108,7 +108,7 @@ export function BreathingGuide({ accentColor, onComplete, onClose }: BreathingGu
               onClick={startBreathing}
               className="px-6 py-3 rounded-full bg-white/15 backdrop-blur-md text-white border border-white/20 hover:bg-white/25 transition-all"
             >
-              开始呼吸 🌬️
+              开始呼吸
             </button>
           </div>
         ) : (

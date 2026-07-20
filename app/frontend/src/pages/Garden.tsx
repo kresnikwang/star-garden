@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { themes } from '@/lib/themes';
+import { themes, THEME_ORDER } from '@/lib/themes';
 import { getCollection } from '@/lib/collection';
 import type { CollectionProgress } from '@/lib/collection';
 import { checkComboStatus } from '@/lib/combo-effects';
+import { CollectibleIcon } from '@/components/CollectibleIcon';
 
 // Garden item layout positions for the 7 collectibles per theme
 // Arranged in a garden-like scatter pattern (percentage-based)
@@ -82,12 +83,21 @@ function GardenItem({ emoji, name, count, collected, x, y, index, accentColor }:
           animation: collected ? `gardenFloat ${3 + index * 0.5}s ease-in-out infinite` : 'none',
         }}
       >
-        <span
-          className="select-none"
-          style={{ fontSize: `${28 * sizeScale}px` }}
-        >
-          {collected ? emoji : '?'}
-        </span>
+        {collected ? (
+          <CollectibleIcon
+            emoji={emoji}
+            size={Math.round(30 * sizeScale)}
+            color={accentColor}
+            title={name}
+          />
+        ) : (
+          <span
+            className="select-none text-white/30"
+            style={{ fontSize: `${22 * sizeScale}px` }}
+          >
+            ?
+          </span>
+        )}
       </div>
 
       {/* Count badge */}
@@ -121,7 +131,7 @@ function GardenItem({ emoji, name, count, collected, x, y, index, accentColor }:
 
 export default function Garden() {
   const navigate = useNavigate();
-  const themeIds = ['spring', 'summer', 'autumn', 'winter'] as const;
+  const themeIds = THEME_ORDER;
   const [activeTheme, setActiveTheme] = useState<string>(themeIds[0]);
 
   const collections = useMemo(() => {
@@ -130,7 +140,7 @@ export default function Garden() {
       map[id] = getCollection(id);
     }
     return map;
-  }, []);
+  }, [themeIds]);
 
   const theme = themes[activeTheme];
   const collection = collections[activeTheme];
@@ -197,7 +207,7 @@ export default function Garden() {
 
       {/* Theme tabs */}
       <div className="fixed top-16 left-0 right-0 z-20 px-4">
-        <div className="flex justify-center gap-2">
+        <div className="flex justify-start sm:justify-center gap-2 overflow-x-auto pb-1 max-w-full px-1 scrollbar-hide">
           {themeIds.map((id) => {
             const t = themes[id];
             const c = collections[id];
@@ -207,14 +217,18 @@ export default function Garden() {
               <button
                 key={id}
                 onClick={() => setActiveTheme(id)}
-                className={`px-3 py-1.5 rounded-full text-xs transition-all duration-300 ${
+                className={`px-3 py-1.5 rounded-full text-xs transition-all duration-300 whitespace-nowrap flex-shrink-0 ${
                   isActive
                     ? 'bg-white/20 text-white border border-white/30 scale-105'
                     : 'bg-white/5 text-white/50 border border-white/10 hover:bg-white/10'
                 }`}
               >
                 {t.name.split('·')[0]}
-                {hasItems && <span className="ml-1 text-[10px] opacity-60">{t.collectibleEmojis[0]}</span>}
+                {hasItems && (
+                  <span className="ml-1 inline-flex align-middle opacity-70">
+                    <CollectibleIcon emoji={t.collectibleEmojis[0]} size={12} color={t.accentColor} />
+                  </span>
+                )}
               </button>
             );
           })}
@@ -295,16 +309,14 @@ export default function Garden() {
         <div className="text-center">
           <div className="flex justify-center gap-3 mb-3">
             {theme.collectibleEmojis.map((emoji, i) => (
-              <span
+              <CollectibleIcon
                 key={i}
-                className={`text-lg transition-all duration-300 ${
-                  (collection.collected[emoji] || 0) > 0
-                    ? 'opacity-100'
-                    : 'opacity-20 grayscale'
-                }`}
-              >
-                {emoji}
-              </span>
+                emoji={emoji}
+                size={22}
+                color={theme.accentColor}
+                muted={(collection.collected[emoji] || 0) === 0}
+                title={theme.collectibles[i]}
+              />
             ))}
           </div>
           <p className="text-white/40 text-xs">

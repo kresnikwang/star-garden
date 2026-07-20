@@ -1,8 +1,8 @@
-import { ThemeConfig } from './themes';
+import { ThemeConfig, themes } from './themes';
 
 // Extended particle type for collectible effects
 export type CollectibleParticleType =
-  | 'butterfly' | 'droplet' | 'ring' | 'wind' | 'sprout' | 'sparkle'
+  | 'petal' | 'butterfly' | 'droplet' | 'ring' | 'wind' | 'sprout' | 'sparkle'
   | 'firefly' | 'starfish' | 'shell' | 'coral' | 'jellyfish' | 'wave'
   | 'maple' | 'pinecone' | 'acorn' | 'spore' | 'ember' | 'sunset' | 'steam'
   | 'snowflake' | 'ice' | 'aurora' | 'snowman' | 'bell' | 'warmth';
@@ -559,11 +559,30 @@ export const winterEffects: Record<string, CollectibleEffect> = {
 
 // ── Maps ────────────────────────────────────────────────────────────────
 
+/** Minimal effect stubs for themes that rely on burstConfigs for fireworks */
+function effectsFromEmojis(emojis: string[], names: string[]): Record<string, CollectibleEffect> {
+  const out: Record<string, CollectibleEffect> = {};
+  emojis.forEach((emoji, i) => {
+    out[emoji] = {
+      emoji,
+      name: names[i] || emoji,
+      baseChance: 0.22,
+      spawnParticles: (x, y, theme, count) =>
+        spawnCollectibleBurst(emoji, x, y, theme, Math.max(0.5, count / 8)).slice(0, count),
+    };
+  });
+  return out;
+}
+
 export const collectibleEffectsMap: Record<string, Record<string, CollectibleEffect>> = {
   spring: springEffects,
   summer: summerEffects,
   autumn: autumnEffects,
   winter: winterEffects,
+  rain: effectsFromEmojis(themes.rain.collectibleEmojis, themes.rain.collectibles),
+  moon: effectsFromEmojis(themes.moon.collectibleEmojis, themes.moon.collectibles),
+  desert: effectsFromEmojis(themes.desert.collectibleEmojis, themes.desert.collectibles),
+  lake: effectsFromEmojis(themes.lake.collectibleEmojis, themes.lake.collectibles),
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -624,14 +643,14 @@ interface BurstConfig {
 const burstConfigs: Record<string, BurstConfig> = {
   // Spring
   '\u{1F338}': { type: 'petal', count: 22, sizeMin: 5, sizeMax: 10, speedMin: 1.5, speedMax: 4.5, gravity: 0.25, rotationSpeedMin: -0.06, rotationSpeedMax: 0.06, lifeMin: 120, lifeMax: 200, spreadMode: 'downward' },
-  '\u{1F33A}': { type: 'sparkle', count: 18, sizeMin: 2, sizeMax: 5, speedMin: 2, speedMax: 5, gravity: 0.1, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 80, lifeMax: 140, spreadMode: 'radial', colors: ['#FFD700', '#FFEC8B', '#FFF8DC'] },
-  '\u{1F98B}': { type: 'butterfly', count: 5, sizeMin: 7, sizeMax: 12, speedMin: 1, speedMax: 3, gravity: -0.15, rotationSpeedMin: 0.03, rotationSpeedMax: 0.08, lifeMin: 180, lifeMax: 280, spreadMode: 'float', colors: ['#FFD700', '#FF8C00', '#FFB6C1'] },
+  '\u{1F33A}': { type: 'sparkle', count: 18, sizeMin: 2, sizeMax: 5, speedMin: 2, speedMax: 5, gravity: 0.1, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 80, lifeMax: 140, spreadMode: 'radial', colors: ['#E0C878', '#E8D8A0', '#F0E8C8'] },
+  '\u{1F98B}': { type: 'butterfly', count: 5, sizeMin: 7, sizeMax: 12, speedMin: 1, speedMax: 3, gravity: -0.15, rotationSpeedMin: 0.03, rotationSpeedMax: 0.08, lifeMin: 180, lifeMax: 280, spreadMode: 'float', colors: ['#D4B070', '#D49870', '#D8A8B8'] },
   '\u{1F4A7}': { type: 'droplet', count: 16, sizeMin: 2, sizeMax: 5, speedMin: 1, speedMax: 3, gravity: -0.05, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 120, lifeMax: 200, spreadMode: 'float', colors: ['rgba(135,206,235,0.6)', 'rgba(173,216,230,0.5)', 'rgba(176,224,230,0.4)'], breathe: true },
   '\u{1F490}': { type: 'ring', count: 4, sizeMin: 6, sizeMax: 14, speedMin: 0.5, speedMax: 2, gravity: 0, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 80, lifeMax: 140, spreadMode: 'radial' },
   '\u{1F343}': { type: 'wind', count: 18, sizeMin: 3, sizeMax: 7, speedMin: 2.5, speedMax: 6, gravity: 0.05, rotationSpeedMin: -0.08, rotationSpeedMax: 0.08, lifeMin: 80, lifeMax: 140, spreadMode: 'radial' },
   '\u{1F331}': { type: 'sprout', count: 14, sizeMin: 4, sizeMax: 8, speedMin: 1, speedMax: 3, gravity: -0.2, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 100, lifeMax: 180, spreadMode: 'upward' },
   // Summer
-  '\u2728': { type: 'firefly', count: 22, sizeMin: 3, sizeMax: 6, speedMin: 1, speedMax: 3.5, gravity: -0.1, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 140, lifeMax: 220, spreadMode: 'float', colors: ['#F7DC6F', '#FFFF99', '#FFD700'], breathe: true },
+  '\u2728': { type: 'firefly', count: 22, sizeMin: 3, sizeMax: 6, speedMin: 1, speedMax: 3.5, gravity: -0.1, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 140, lifeMax: 220, spreadMode: 'float', colors: ['#D4C878', '#E0D890', '#C8B868'], breathe: true },
   '\u2B50': { type: 'starfish', count: 14, sizeMin: 5, sizeMax: 10, speedMin: 1.5, speedMax: 4, gravity: 0.15, rotationSpeedMin: -0.05, rotationSpeedMax: 0.05, lifeMin: 100, lifeMax: 160, spreadMode: 'radial' },
   '\u{1F41A}': { type: 'shell', count: 14, sizeMin: 3, sizeMax: 6, speedMin: 1, speedMax: 3, gravity: -0.08, rotationSpeedMin: -0.03, rotationSpeedMax: 0.03, lifeMin: 120, lifeMax: 200, spreadMode: 'float', colors: ['rgba(255,248,231,0.7)', 'rgba(255,228,196,0.6)', 'rgba(255,222,173,0.5)'], breathe: true },
   '\u{1FAB8}': { type: 'coral', count: 12, sizeMin: 4, sizeMax: 8, speedMin: 1, speedMax: 3, gravity: 0.1, rotationSpeedMin: -0.04, rotationSpeedMax: 0.04, lifeMin: 80, lifeMax: 140, spreadMode: 'radial', colors: ['#FF6B6B', '#FF8E8E', '#FFAAAA'] },
@@ -651,9 +670,40 @@ const burstConfigs: Record<string, BurstConfig> = {
   '\u{1F48E}': { type: 'ice', count: 16, sizeMin: 4, sizeMax: 9, speedMin: 1.5, speedMax: 4, gravity: 0.15, rotationSpeedMin: -0.06, rotationSpeedMax: 0.06, lifeMin: 100, lifeMax: 160, spreadMode: 'radial', colors: ['#AED6F1', '#85C1E9', '#D6EAF8'] },
   '\u{1F30C}': { type: 'aurora', count: 6, sizeMin: 10, sizeMax: 20, speedMin: 0.3, speedMax: 1.5, gravity: 0, rotationSpeedMin: 0.005, rotationSpeedMax: 0.015, lifeMin: 120, lifeMax: 200, spreadMode: 'float' },
   '\u26C4': { type: 'snowman', count: 10, sizeMin: 3, sizeMax: 7, speedMin: 0.8, speedMax: 2.5, gravity: -0.08, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 140, lifeMax: 220, spreadMode: 'float', colors: ['rgba(255,255,255,0.7)', 'rgba(232,244,248,0.5)'], breathe: true },
-  '\u{1F514}': { type: 'bell', count: 14, sizeMin: 4, sizeMax: 8, speedMin: 1.5, speedMax: 4, gravity: 0.1, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 80, lifeMax: 140, spreadMode: 'radial', colors: ['#FFD700', '#FFC125', '#FFE4B5'], breathe: true },
-  '\u{1F31F}': { type: 'bell', count: 18, sizeMin: 2, sizeMax: 5, speedMin: 0.5, speedMax: 2.5, gravity: -0.05, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 120, lifeMax: 200, spreadMode: 'float', colors: ['#FFFFFF', '#FFFACD', '#FAFAD2'], breathe: true },
+  '\u{1F514}': { type: 'bell', count: 14, sizeMin: 4, sizeMax: 8, speedMin: 1.5, speedMax: 4, gravity: 0.1, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 80, lifeMax: 140, spreadMode: 'radial', colors: ['#D4B868', '#C8A850', '#E0D0A0'], breathe: true },
+  '\u{1F31F}': { type: 'bell', count: 18, sizeMin: 2, sizeMax: 5, speedMin: 0.5, speedMax: 2.5, gravity: -0.05, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 120, lifeMax: 200, spreadMode: 'float', colors: ['#E8F0F4', '#E8E0C8', '#D8E0E8'], breathe: true },
   '\u{1F525}': { type: 'warmth', count: 18, sizeMin: 4, sizeMax: 9, speedMin: 1, speedMax: 3, gravity: -0.25, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 120, lifeMax: 200, spreadMode: 'upward', breathe: true },
+  // Rain · 烟波夜
+  '\u2614': { type: 'droplet', count: 20, sizeMin: 2, sizeMax: 4, speedMin: 1.5, speedMax: 4, gravity: 0.12, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 90, lifeMax: 150, spreadMode: 'downward', colors: ['rgba(160,190,205,0.7)', 'rgba(180,205,215,0.5)'] },
+  '\u{1F3EE}': { type: 'warmth', count: 14, sizeMin: 3, sizeMax: 7, speedMin: 0.8, speedMax: 2.5, gravity: -0.12, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 120, lifeMax: 180, spreadMode: 'upward', colors: ['#D4A878', '#C89860', '#E0C090'], breathe: true },
+  '\u{1FAE7}': { type: 'droplet', count: 16, sizeMin: 2, sizeMax: 5, speedMin: 0.6, speedMax: 2, gravity: -0.04, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 140, lifeMax: 220, spreadMode: 'float', colors: ['rgba(190,210,220,0.55)', 'rgba(170,200,210,0.4)'], breathe: true },
+  '\u26F5': { type: 'shell', count: 10, sizeMin: 3, sizeMax: 6, speedMin: 0.8, speedMax: 2.2, gravity: 0.04, rotationSpeedMin: -0.03, rotationSpeedMax: 0.03, lifeMin: 120, lifeMax: 180, spreadMode: 'float', colors: ['rgba(140,160,175,0.6)', 'rgba(170,185,195,0.5)'] },
+  '\u{1F32B}\uFE0F': { type: 'steam', count: 18, sizeMin: 4, sizeMax: 10, speedMin: 0.4, speedMax: 1.8, gravity: -0.06, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 140, lifeMax: 220, spreadMode: 'float', colors: ['rgba(200,210,220,0.35)', 'rgba(180,195,205,0.25)'], breathe: true },
+  '\u{1F33F}': { type: 'sprout', count: 14, sizeMin: 3, sizeMax: 7, speedMin: 0.8, speedMax: 2.5, gravity: -0.1, rotationSpeedMin: -0.02, rotationSpeedMax: 0.02, lifeMin: 100, lifeMax: 170, spreadMode: 'upward', colors: ['#7A9880', '#90A890', '#A0B8A0'] },
+  '\u{1F4A6}': { type: 'droplet', count: 18, sizeMin: 2, sizeMax: 5, speedMin: 1.2, speedMax: 3.5, gravity: 0.08, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 90, lifeMax: 150, spreadMode: 'radial', colors: ['rgba(150,185,200,0.65)', 'rgba(175,200,210,0.5)'] },
+  // Moon · 桂花庭
+  '\u{1F315}': { type: 'ring', count: 5, sizeMin: 8, sizeMax: 16, speedMin: 0.4, speedMax: 1.5, gravity: 0, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 100, lifeMax: 160, spreadMode: 'radial', colors: ['#E8DCC0', '#D8C8A8', '#F0E8D0'] },
+  '\u{1F33C}': { type: 'petal', count: 20, sizeMin: 4, sizeMax: 8, speedMin: 1.2, speedMax: 3.5, gravity: 0.08, rotationSpeedMin: -0.05, rotationSpeedMax: 0.05, lifeMin: 120, lifeMax: 200, spreadMode: 'downward', colors: ['#E8D8A8', '#D4C890', '#F0E4C0'] },
+  '\u{1F430}': { type: 'butterfly', count: 4, sizeMin: 6, sizeMax: 11, speedMin: 0.8, speedMax: 2.5, gravity: -0.08, rotationSpeedMin: 0.02, rotationSpeedMax: 0.06, lifeMin: 160, lifeMax: 240, spreadMode: 'float', colors: ['#E0D0C0', '#D0C0D0', '#F0E8D8'] },
+  '\u{1F56F}\uFE0F': { type: 'ember', count: 14, sizeMin: 2, sizeMax: 5, speedMin: 0.8, speedMax: 2.5, gravity: -0.15, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 100, lifeMax: 160, spreadMode: 'upward', colors: ['#E0C090', '#D4A868', '#F0D8A0'], breathe: true },
+  '\u2601\uFE0F': { type: 'steam', count: 16, sizeMin: 5, sizeMax: 12, speedMin: 0.3, speedMax: 1.5, gravity: -0.04, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 140, lifeMax: 220, spreadMode: 'float', colors: ['rgba(220,210,230,0.35)', 'rgba(200,195,220,0.25)'], breathe: true },
+  '\u{1F319}': { type: 'sparkle', count: 16, sizeMin: 2, sizeMax: 5, speedMin: 1, speedMax: 3, gravity: 0.02, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 100, lifeMax: 160, spreadMode: 'radial', colors: ['#E8E0C8', '#D0C8E0', '#F0E8D8'] },
+  '\u{1F4AB}': { type: 'sparkle', count: 20, sizeMin: 2, sizeMax: 4, speedMin: 1.5, speedMax: 4, gravity: 0.05, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 80, lifeMax: 140, spreadMode: 'radial', colors: ['#F0E8D0', '#E0D8C0', '#D8D0E8'] },
+  // Desert · 星漠
+  '\u{1F3DC}\uFE0F': { type: 'spore', count: 22, sizeMin: 2, sizeMax: 5, speedMin: 1, speedMax: 3.5, gravity: 0.06, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 100, lifeMax: 170, spreadMode: 'radial', colors: ['rgba(200,170,120,0.55)', 'rgba(180,150,100,0.4)'] },
+  '\u{1F335}': { type: 'sprout', count: 12, sizeMin: 4, sizeMax: 8, speedMin: 0.8, speedMax: 2.5, gravity: -0.05, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 100, lifeMax: 160, spreadMode: 'upward', colors: ['#6A9070', '#80A080', '#90B090'] },
+  '\u{1FAA8}': { type: 'sparkle', count: 18, sizeMin: 1.5, sizeMax: 4, speedMin: 1.5, speedMax: 4, gravity: 0.08, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 80, lifeMax: 140, spreadMode: 'radial', colors: ['#E0C890', '#D4B878', '#F0DCA8'] },
+  '\u{1F32C}\uFE0F': { type: 'wind', count: 18, sizeMin: 3, sizeMax: 7, speedMin: 2.5, speedMax: 6, gravity: 0.02, rotationSpeedMin: -0.08, rotationSpeedMax: 0.08, lifeMin: 80, lifeMax: 140, spreadMode: 'radial', colors: ['#C8B090', '#B8A080', '#D8C0A0'] },
+  '\u{1F6F8}': { type: 'aurora', count: 5, sizeMin: 10, sizeMax: 18, speedMin: 0.3, speedMax: 1.2, gravity: 0, rotationSpeedMin: 0.005, rotationSpeedMax: 0.02, lifeMin: 120, lifeMax: 200, spreadMode: 'float', colors: ['#C8A878', '#A888C0', '#E0C8A0'] },
+  '\u{1F42A}': { type: 'pinecone', count: 10, sizeMin: 3, sizeMax: 6, speedMin: 1, speedMax: 2.5, gravity: 0.06, rotationSpeedMin: -0.04, rotationSpeedMax: 0.04, lifeMin: 120, lifeMax: 180, spreadMode: 'float', colors: ['rgba(180,140,90,0.55)', 'rgba(160,120,80,0.45)'] },
+  '\u{1F307}': { type: 'sunset', count: 8, sizeMin: 6, sizeMax: 12, speedMin: 1, speedMax: 3, gravity: 0.04, rotationSpeedMin: 0.01, rotationSpeedMax: 0.03, lifeMin: 100, lifeMax: 160, spreadMode: 'radial', colors: ['#D49060', '#C87850', '#E0A870'] },
+  // Lake · 睡莲
+  '\u{1FAB7}': { type: 'petal', count: 18, sizeMin: 4, sizeMax: 9, speedMin: 0.8, speedMax: 2.5, gravity: -0.02, rotationSpeedMin: -0.04, rotationSpeedMax: 0.04, lifeMin: 140, lifeMax: 220, spreadMode: 'float', colors: ['#D0B0B8', '#E0C8D0', '#B8C8C0'] },
+  '\u{1F41F}': { type: 'jellyfish', count: 5, sizeMin: 5, sizeMax: 10, speedMin: 0.6, speedMax: 2, gravity: -0.05, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 140, lifeMax: 220, spreadMode: 'float', colors: ['rgba(120,170,180,0.65)', 'rgba(200,150,150,0.5)'], breathe: true },
+  '\u{1F33E}': { type: 'wind', count: 16, sizeMin: 3, sizeMax: 7, speedMin: 1.5, speedMax: 4, gravity: 0.03, rotationSpeedMin: -0.05, rotationSpeedMax: 0.05, lifeMin: 100, lifeMax: 160, spreadMode: 'radial', colors: ['#A8B890', '#90A878', '#C0C8A0'] },
+  '\u{1FA9E}': { type: 'ring', count: 6, sizeMin: 6, sizeMax: 14, speedMin: 0.4, speedMax: 1.8, gravity: 0, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 90, lifeMax: 150, spreadMode: 'radial', colors: ['#A0C0C8', '#C8D8E0', '#88B0B8'] },
+  '\u{1F986}': { type: 'butterfly', count: 4, sizeMin: 5, sizeMax: 10, speedMin: 0.8, speedMax: 2.5, gravity: -0.1, rotationSpeedMin: 0.02, rotationSpeedMax: 0.06, lifeMin: 150, lifeMax: 230, spreadMode: 'float', colors: ['#88A8A0', '#A0B8B0', '#C0A8A8'] },
+  '\u{1F40C}': { type: 'spore', count: 16, sizeMin: 2, sizeMax: 5, speedMin: 0.5, speedMax: 2, gravity: -0.03, rotationSpeedMin: 0, rotationSpeedMax: 0, lifeMin: 120, lifeMax: 200, spreadMode: 'float', colors: ['rgba(140,180,160,0.5)', 'rgba(160,190,170,0.4)'], breathe: true },
 };
 
 /**

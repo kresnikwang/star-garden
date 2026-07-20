@@ -37,6 +37,37 @@ const COLLECTIBLE_AUDIO_MAP: Record<string, AudioLayerType> = {
   '\u{1F514}': 'bell',       // 铃铛
   '\u{1F31F}': 'crystal',    // 星光
   '\u{1F525}': 'fire',       // 暖炉
+  // Rain
+  '\u2614': 'water',
+  '\u{1F3EE}': 'fire',
+  '\u{1FAE7}': 'water',
+  '\u26F5': 'water',
+  '\u{1F32B}\uFE0F': 'wind',
+  '\u{1F33F}': 'nature',
+  '\u{1F4A6}': 'water',
+  // Moon
+  '\u{1F315}': 'crystal',
+  '\u{1F33C}': 'nature',
+  '\u{1F430}': 'creature',
+  '\u{1F56F}\uFE0F': 'fire',
+  '\u2601\uFE0F': 'wind',
+  '\u{1F319}': 'crystal',
+  '\u{1F4AB}': 'crystal',
+  // Desert
+  '\u{1F3DC}\uFE0F': 'wind',
+  '\u{1F335}': 'nature',
+  '\u{1FAA8}': 'crystal',
+  '\u{1F32C}\uFE0F': 'wind',
+  '\u{1F6F8}': 'crystal',
+  '\u{1F42A}': 'nature',
+  '\u{1F307}': 'fire',
+  // Lake
+  '\u{1FAB7}': 'nature',
+  '\u{1F41F}': 'creature',
+  '\u{1F33E}': 'nature',
+  '\u{1FA9E}': 'water',
+  '\u{1F986}': 'creature',
+  '\u{1F40C}': 'nature',
 };
 
 export interface AudioVoice {

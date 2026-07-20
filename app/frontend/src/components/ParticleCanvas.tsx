@@ -1,12 +1,10 @@
 import { useRef, useEffect, useCallback } from 'react';
-import { ThemeConfig, getDailyVariation } from '@/lib/themes';
+import { ThemeConfig } from '@/lib/themes';
 import { GrowthState, isGestureUnlocked } from '@/lib/growth-system';
 import { CollectionProgress } from '@/lib/collection';
 import {
   CollectibleParticleType,
-  getActiveEffects,
-  calculateMixChance,
-  spawnCollectibleBurst,
+  type SpawnedParticle,
 } from '@/lib/collectible-effects';
 import {
   checkComboStatus,
@@ -14,6 +12,12 @@ import {
   getComboTriggerChance,
 } from '@/lib/combo-effects';
 import type { ComboParticleType } from '@/lib/combo-effects';
+import {
+  getThemeFireworkShape,
+  getThemeFireworkMotion,
+  getWatercolorPalette,
+  mixCollectibleBursts,
+} from '@/lib/theme-style';
 
 type SwipeDirection = 'up' | 'down' | 'left' | 'right';
 
@@ -70,6 +74,29 @@ interface ParticleCanvasProps {
 
 // Global particle cap — keeps frame time predictable under rapid tapping
 const MAX_PARTICLES = 450;
+
+/** Map collectible burst particles into the canvas Particle shape */
+function mapBurstParticles(bursts: SpawnedParticle[]): Particle[] {
+  return bursts.map((bp) => ({
+    x: bp.x,
+    y: bp.y,
+    vx: bp.vx,
+    vy: bp.vy,
+    life: bp.life,
+    maxLife: bp.maxLife,
+    color: bp.color,
+    size: bp.size,
+    type: bp.type as Particle['type'],
+    rotation: bp.rotation,
+    rotationSpeed: bp.rotationSpeed,
+    orbitAngle: bp.orbitAngle,
+    orbitRadius: bp.orbitRadius,
+    orbitSpeed: bp.orbitSpeed,
+    breathPhase: bp.breathPhase,
+    breathSpeed: bp.breathSpeed,
+    gravity: (bp as unknown as Record<string, number>).gravity,
+  }));
+}
 
 export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeStart, onChargeEnd, onSwipeStart, onSwipeMove, onSwipeEnd, onPinchStart, onPinchMove, onPinchEnd }: ParticleCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -210,7 +237,7 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
     themeRef.current = theme;
   }, [theme]);
 
-  const dailyVariation = getDailyVariation(theme.id);
+  // theme-bound shape language lives in getThemeFireworkShape / getDailyVariation
 
   /**
    * Add new particles while respecting MAX_PARTICLES.
@@ -273,95 +300,66 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
 
   const createFireworkParticles = useCallback(
     (x: number, y: number, intensity: number = 1) => {
-      const colors = themeRef.current.particleColors;
-      const count = Math.floor((20 + Math.random() * 15) * intensity);
+      const theme = themeRef.current;
+      const colors = getWatercolorPalette(theme);
+      const motion = getThemeFireworkMotion(theme.id);
+      const count = Math.floor((18 + Math.random() * 14) * intensity);
       const newParticles: Particle[] = [];
 
       for (let i = 0; i < count; i++) {
-        const angle = (Math.PI * 2 * i) / count + Math.random() * 0.3;
-        const speed = (2 + Math.random() * 4) * intensity;
+        const angle = (Math.PI * 2 * i) / count + Math.random() * 0.35;
+        // Slightly uneven radial speeds → ink-splash organic look
+        const speed = (1.6 + Math.random() * 3.4) * intensity * motion.speedMul;
         newParticles.push({
-          x,
-          y,
+          x: x + (Math.random() - 0.5) * 4,
+          y: y + (Math.random() - 0.5) * 4,
           vx: Math.cos(angle) * speed,
           vy: Math.sin(angle) * speed,
           life: 1,
-          maxLife: 60 + Math.random() * 40,
+          maxLife: (70 + Math.random() * 50) * motion.lifeMul,
           color: colors[Math.floor(Math.random() * colors.length)],
-          size: (3 + Math.random() * 5) * intensity,
+          size: (2.5 + Math.random() * 4.5) * intensity * motion.sizeMul,
           type: intensity > 1.5 ? 'charge' : 'firework',
           rotation: Math.random() * Math.PI * 2,
-          rotationSpeed: (Math.random() - 0.5) * 0.1,
+          rotationSpeed: (Math.random() - 0.5) * 0.08,
         });
       }
 
-      // Trailing sparkles — BAKE into persistent layer
+      // Soft color wash residue (not pure white sparkles)
       if (persistentCtxRef.current) {
         const pctx = persistentCtxRef.current;
-        const trailCount = Math.floor(8 * intensity);
+        const trailCount = Math.floor(6 * intensity);
         for (let i = 0; i < trailCount; i++) {
           const angle = Math.random() * Math.PI * 2;
           const speed = 1 + Math.random() * 2;
           const tx = x + Math.cos(angle) * speed * 5;
           const ty = y + Math.sin(angle) * speed * 5;
-          
-          const sprite = getGlowSprite('#FFFFFF', 2 + Math.random() * 2);
+          const washColor = colors[Math.floor(Math.random() * colors.length)];
+          const sprite = getGlowSprite(washColor, 3 + Math.random() * 3);
           const half = sprite.width / 2;
-          pctx.globalAlpha = 0.5;
+          pctx.globalAlpha = 0.28;
           pctx.globalCompositeOperation = 'lighter';
           pctx.drawImage(sprite, tx - half, ty - half);
           pctx.globalCompositeOperation = 'source-over';
         }
       }
 
-        // ── Collectible BURST mixing — every item has a chance to erupt ────────────
+      // ── Collectible mix-in (shared helper) ────────────────────────────
       const coll = collectionRef.current;
-      if (coll && coll.collected) {
-        const itemEntries = Object.entries(coll.collected).filter(([, c]) => c > 0);
-        const uniqueItems = itemEntries.length;
-        
-        if (uniqueItems > 0) {
-          // Formula: base 20% + 3% per unique item
-          const mixChance = Math.min(0.20 + uniqueItems * 0.03, 0.60);
-          
-          for (const [emoji, collectedCount] of itemEntries) {
-            // Each item has an independent chance to mix in
-            if (Math.random() < mixChance) {
-              const itemIntensity = intensity * (1 + Math.log(collectedCount + 1) * 0.2);
-              const burstParticles = spawnCollectibleBurst(emoji, x, y, themeRef.current, itemIntensity);
-              
-              newParticles.push(
-                ...burstParticles.map((bp) => ({
-                  x: bp.x,
-                  y: bp.y,
-                  vx: bp.vx,
-                  vy: bp.vy,
-                  life: bp.life,
-                  maxLife: bp.maxLife,
-                  color: bp.color,
-                  size: bp.size,
-                  type: bp.type as Particle['type'],
-                  rotation: bp.rotation,
-                  rotationSpeed: bp.rotationSpeed,
-                  orbitAngle: bp.orbitAngle,
-                  orbitRadius: bp.orbitRadius,
-                  orbitSpeed: bp.orbitSpeed,
-                  breathPhase: bp.breathPhase,
-                  breathSpeed: bp.breathSpeed,
-                  gravity: (bp as unknown as Record<string, number>).gravity,
-                }))
-              );
-            }
-          }
-        }
+      if (coll?.collected) {
+        newParticles.push(
+          ...mapBurstParticles(
+            mixCollectibleBursts({
+              x, y, theme, collected: coll.collected, intensity, chanceCap: 0.6,
+            })
+          )
+        );
 
-        // ── Combo effect trigger ─────────────────────────────────────────────────────────────────
-        const comboStatus = checkComboStatus(themeRef.current.id, coll.collected);
+        // ── Combo effect trigger ─────────────────────────────────────────
+        const comboStatus = checkComboStatus(theme.id, coll.collected);
         if (comboStatus && comboCooldownRef.current === 0 && Math.random() < getComboTriggerChance(comboStatus.tier)) {
-          comboCooldownRef.current = 300; // ~5s animation guard
-          const comboParticles = generateComboParticles(
-            themeRef.current.id, comboStatus.tier, x, y
-          );
+          comboCooldownRef.current = 300;
+          const comboParticles = generateComboParticles(theme.id, comboStatus.tier, x, y);
           newParticles.push(
             ...comboParticles.map((cp) => ({
               x: cp.x,
@@ -382,43 +380,21 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
               breathSpeed: cp.breathSpeed,
             }))
           );
-          // Combo triggers additional bursts from all collected items
-          if (uniqueItems > 0) {
-            for (const [emoji, collectedCount] of itemEntries) {
-              // High chance during combo
-              if (Math.random() < 0.8) {
-                const comboBurstIntensity = intensity * (1 + Math.log(collectedCount + 1) * 0.15);
-                const comboBurst = spawnCollectibleBurst(emoji, x, y, themeRef.current, comboBurstIntensity);
-                newParticles.push(
-                  ...comboBurst.map((bp) => ({
-                    x: bp.x,
-                    y: bp.y,
-                    vx: bp.vx,
-                    vy: bp.vy,
-                    life: bp.life,
-                    maxLife: bp.maxLife,
-                    color: bp.color,
-                    size: bp.size,
-                    type: bp.type as Particle['type'],
-                    rotation: bp.rotation,
-                    rotationSpeed: bp.rotationSpeed,
-                    orbitAngle: bp.orbitAngle,
-                    orbitRadius: bp.orbitRadius,
-                    orbitSpeed: bp.orbitSpeed,
-                    breathPhase: bp.breathPhase,
-                    breathSpeed: bp.breathSpeed,
-                    gravity: (bp as unknown as Record<string, number>).gravity,
-                  }))
-                );
-              }
-            }
-          }
+          newParticles.push(
+            ...mapBurstParticles(
+              mixCollectibleBursts({
+                x, y, theme, collected: coll.collected,
+                intensity: intensity * 0.9,
+                forceChance: 0.8,
+              })
+            )
+          );
         }
       }
 
       addParticles(newParticles);
     },
-    [addParticles]
+    [addParticles, getGlowSprite]
   );
 
   // Determine swipe direction from angle
@@ -460,15 +436,17 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
         });
       }
 
-      // Sparkle trail behind — BAKE into persistent layer
+      // Soft color wash trail — BAKE into persistent layer
       if (persistentCtxRef.current) {
         const pctx = persistentCtxRef.current;
+        const washColors = getWatercolorPalette(themeRef.current);
         for (let i = 0; i < 8; i++) {
           const tx = x + (Math.random() - 0.5) * 30;
           const ty = y + Math.random() * 20;
-          const sprite = getGlowSprite('#FFFFFF', 1 + Math.random() * 2);
+          const wash = washColors[Math.floor(Math.random() * washColors.length)];
+          const sprite = getGlowSprite(wash, 2 + Math.random() * 2);
           const half = sprite.width / 2;
-          pctx.globalAlpha = 0.4;
+          pctx.globalAlpha = 0.28;
           pctx.globalCompositeOperation = 'lighter';
           pctx.drawImage(sprite, tx - half, ty - half);
           pctx.globalCompositeOperation = 'source-over';
@@ -477,109 +455,69 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
 
       // Collectible burst on swipe
       const coll = collectionRef.current;
-      if (coll && coll.collected) {
-        const itemEntries = Object.entries(coll.collected).filter(([, c]) => c > 0);
-        const uniqueItems = itemEntries.length;
-
-        if (uniqueItems > 0) {
-          const mixChance = Math.min(0.20 + uniqueItems * 0.03, 0.50); // Slightly lower chance for swipes
-          for (const [emoji, collectedCount] of itemEntries) {
-            if (Math.random() < mixChance) {
-              const itemIntensity = 1 + Math.log(collectedCount + 1) * 0.25;
-              const burstParticles = spawnCollectibleBurst(emoji, x, y, themeRef.current, itemIntensity);
-              newParticles.push(
-                ...burstParticles.map((bp) => ({
-                  x: bp.x,
-                  y: bp.y,
-                  vx: bp.vx,
-                  vy: bp.vy,
-                  life: bp.life,
-                  maxLife: bp.maxLife,
-                  color: bp.color,
-                  size: bp.size,
-                  type: bp.type as Particle['type'],
-                  rotation: bp.rotation,
-                  rotationSpeed: bp.rotationSpeed,
-                  orbitAngle: bp.orbitAngle,
-                  orbitRadius: bp.orbitRadius,
-                  orbitSpeed: bp.orbitSpeed,
-                  breathPhase: bp.breathPhase,
-                  breathSpeed: bp.breathSpeed,
-                  gravity: (bp as unknown as Record<string, number>).gravity,
-                }))
-              );
-            }
-          }
-        }
+      if (coll?.collected) {
+        newParticles.push(
+          ...mapBurstParticles(
+            mixCollectibleBursts({
+              x, y, theme: themeRef.current, collected: coll.collected,
+              intensity: 1, chanceCap: 0.5,
+            })
+          )
+        );
       }
 
       addParticles(newParticles);
     },
-    [addParticles]
+    [addParticles, getGlowSprite]
   );
 
   // Down swipe: petal rain / falling particles
   const createDownSwipeEffect = useCallback(
     (x: number, y: number) => {
-      const colors = themeRef.current.particleColors;
+      const theme = themeRef.current;
+      const colors = getWatercolorPalette(theme);
       const count = 25 + growthRef.current.level * 2;
       const newParticles: Particle[] = [];
       const canvasW = canvasRef.current?.width || 400;
+      // Theme-aware fall motif
+      const fallType: Particle['type'] =
+        theme.id === 'autumn' || theme.id === 'desert' ? 'maple'
+        : theme.id === 'winter' || theme.id === 'moon' ? 'snowflake'
+        : theme.id === 'summer' || theme.id === 'lake' ? 'firefly'
+        : theme.id === 'rain' ? 'droplet'
+        : 'petal';
+      const rises = theme.id === 'summer' || theme.id === 'lake' || theme.id === 'moon';
 
       for (let i = 0; i < count; i++) {
         const startX = x + (Math.random() - 0.5) * canvasW * 0.6;
         newParticles.push({
           x: startX,
           y: y - 50 - Math.random() * 100,
-          vx: (Math.random() - 0.5) * 1.5, // Gentle horizontal drift
-          vy: 1.5 + Math.random() * 2.5, // Falling down
+          vx: (Math.random() - 0.5) * 1.5,
+          vy: rises ? -0.4 - Math.random() * 1.2 : 1.5 + Math.random() * 2.5,
           life: 1,
           maxLife: 100 + Math.random() * 80,
           color: colors[Math.floor(Math.random() * colors.length)],
           size: 3 + Math.random() * 5,
-          type: 'petal',
+          type: fallType,
           rotation: Math.random() * Math.PI * 2,
-          rotationSpeed: (Math.random() - 0.5) * 0.08, // Slow spinning like petals
+          rotationSpeed: (Math.random() - 0.5) * 0.08,
           swipeDir: 'down',
+          breathPhase: Math.random() * Math.PI * 2,
+          breathSpeed: 1 + Math.random(),
         });
       }
 
-      // Collectible burst on down swipe
       const collDown = collectionRef.current;
-      if (collDown && collDown.collected) {
-        const itemEntries = Object.entries(collDown.collected).filter(([, c]) => c > 0);
-        const uniqueItems = itemEntries.length;
-
-        if (uniqueItems > 0) {
-          const mixChance = Math.min(0.20 + uniqueItems * 0.03, 0.50);
-          for (const [emoji, collectedCount] of itemEntries) {
-            if (Math.random() < mixChance) {
-              const itemIntensity = 1 + Math.log(collectedCount + 1) * 0.25;
-              const burstParticles = spawnCollectibleBurst(emoji, x, y, themeRef.current, itemIntensity);
-              newParticles.push(
-                ...burstParticles.map((bp) => ({
-                  x: bp.x,
-                  y: bp.y,
-                  vx: bp.vx,
-                  vy: bp.vy,
-                  life: bp.life,
-                  maxLife: bp.maxLife,
-                  color: bp.color,
-                  size: bp.size,
-                  type: bp.type as Particle['type'],
-                  rotation: bp.rotation,
-                  rotationSpeed: bp.rotationSpeed,
-                  orbitAngle: bp.orbitAngle,
-                  orbitRadius: bp.orbitRadius,
-                  orbitSpeed: bp.orbitSpeed,
-                  breathPhase: bp.breathPhase,
-                  breathSpeed: bp.breathSpeed,
-                  gravity: (bp as unknown as Record<string, number>).gravity,
-                }))
-              );
-            }
-          }
-        }
+      if (collDown?.collected) {
+        newParticles.push(
+          ...mapBurstParticles(
+            mixCollectibleBursts({
+              x, y, theme, collected: collDown.collected,
+              intensity: 1, chanceCap: 0.5,
+            })
+          )
+        );
       }
 
       addParticles(newParticles);
@@ -622,9 +560,12 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
         for (let i = 0; i < 12; i++) {
           const tx = startX + (Math.random() - 0.5) * 20;
           const ty = startY + (Math.random() - 0.5) * 20;
-          const sprite = getGlowSprite('#FFFFFF', 1 + Math.random() * 2);
+          const wash = themeRef.current.particleColors[
+            Math.floor(Math.random() * themeRef.current.particleColors.length)
+          ];
+          const sprite = getGlowSprite(wash, 2 + Math.random() * 2);
           const half = sprite.width / 2;
-          pctx.globalAlpha = 0.5;
+          pctx.globalAlpha = 0.3;
           pctx.globalCompositeOperation = 'lighter';
           pctx.drawImage(sprite, tx - half, ty - half);
           pctx.globalCompositeOperation = 'source-over';
@@ -633,42 +574,17 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
 
       // Collectible burst on horizontal swipe
       const collHoriz = collectionRef.current;
-      if (collHoriz && collHoriz.collected) {
-        const itemEntries = Object.entries(collHoriz.collected).filter(([, c]) => c > 0);
-        const uniqueItems = itemEntries.length;
-
-        if (uniqueItems > 0) {
-          const mixChance = Math.min(0.20 + uniqueItems * 0.03, 0.50);
-          const cx = (startX + endX) / 2;
-          const cy = (startY + endY) / 2;
-          for (const [emoji, collectedCount] of itemEntries) {
-            if (Math.random() < mixChance) {
-              const itemIntensity = 1 + Math.log(collectedCount + 1) * 0.25;
-              const burstParticles = spawnCollectibleBurst(emoji, cx, cy, themeRef.current, itemIntensity);
-              newParticles.push(
-                ...burstParticles.map((bp) => ({
-                  x: bp.x,
-                  y: bp.y,
-                  vx: bp.vx,
-                  vy: bp.vy,
-                  life: bp.life,
-                  maxLife: bp.maxLife,
-                  color: bp.color,
-                  size: bp.size,
-                  type: bp.type as Particle['type'],
-                  rotation: bp.rotation,
-                  rotationSpeed: bp.rotationSpeed,
-                  orbitAngle: bp.orbitAngle,
-                  orbitRadius: bp.orbitRadius,
-                  orbitSpeed: bp.orbitSpeed,
-                  breathPhase: bp.breathPhase,
-                  breathSpeed: bp.breathSpeed,
-                  gravity: (bp as unknown as Record<string, number>).gravity,
-                }))
-              );
-            }
-          }
-        }
+      if (collHoriz?.collected) {
+        const cx = (startX + endX) / 2;
+        const cy = (startY + endY) / 2;
+        newParticles.push(
+          ...mapBurstParticles(
+            mixCollectibleBursts({
+              x: cx, y: cy, theme: themeRef.current,
+              collected: collHoriz.collected, intensity: 1, chanceCap: 0.5,
+            })
+          )
+        );
       }
 
       addParticles(newParticles);
@@ -1720,16 +1636,16 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
         gradient.addColorStop(0, 'transparent');
         gradient.addColorStop(0.3, p.color);
         gradient.addColorStop(0.7, p.color);
-        gradient.addColorStop(1, '#FFFFFF');
+        gradient.addColorStop(1, '#F5EDE0');
         ctx.fillStyle = gradient;
         ctx.beginPath();
         ctx.ellipse(0, 0, length, p.size * 0.4, 0, 0, Math.PI * 2);
         ctx.fill();
-        // Bright core
-        ctx.globalAlpha = alpha * 0.8;
-        ctx.fillStyle = '#FFFFFF';
+        // Soft cream core
+        ctx.globalAlpha = alpha * 0.5;
+        ctx.fillStyle = '#F5EDE0';
         ctx.beginPath();
-        ctx.arc(length * 0.5, 0, p.size * 0.3, 0, Math.PI * 2);
+        ctx.arc(length * 0.5, 0, p.size * 0.28, 0, Math.PI * 2);
         ctx.fill();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.globalAlpha = 1;
@@ -2066,11 +1982,11 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
         ctx.beginPath();
         ctx.arc(0, 0, p.size * breath, 0, Math.PI * 2);
         ctx.fill();
-        // Inner bright core
-        ctx.globalAlpha = alpha * 0.6;
-        ctx.fillStyle = '#FFFFFF';
+        // Soft cream core (watercolor, not neon white)
+        ctx.globalAlpha = alpha * 0.4;
+        ctx.fillStyle = '#F5EDE0';
         ctx.beginPath();
-        ctx.arc(0, 0, p.size * 0.4, 0, Math.PI * 2);
+        ctx.arc(0, 0, p.size * 0.35, 0, Math.PI * 2);
         ctx.fill();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.globalAlpha = 1;
@@ -2113,11 +2029,11 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
         }
         ctx.closePath();
         ctx.fill();
-        // White core
-        ctx.fillStyle = '#FFFFFF';
-        ctx.globalAlpha = alpha * 0.8;
+        // Soft cream core
+        ctx.fillStyle = '#F5EDE0';
+        ctx.globalAlpha = alpha * 0.45;
         ctx.beginPath();
-        ctx.arc(0, 0, p.size * 0.35, 0, Math.PI * 2);
+        ctx.arc(0, 0, p.size * 0.3, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -2141,73 +2057,176 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
       }
 
       // ── firework / charge / nebula / swipe / trail / sparkle / etc. ───
-      const glowMult = p.type === 'charge' ? 2.5 : p.type === 'nebula' ? 2 : 1.2;
-      const glowAlpha = p.type === 'charge' ? 0.2 : 0.15;
+      // Watercolor language: soft layered washes, no hard white cores / sticker shapes
+      const isFireworkBody = p.type === 'firework' || p.type === 'charge';
+      const glowMult = p.type === 'charge' ? 3.2 : p.type === 'nebula' ? 2.4 : isFireworkBody ? 2.0 : 1.4;
+      const glowAlpha = p.type === 'charge' ? 0.18 : isFireworkBody ? 0.22 : 0.14;
       drawGlow(0, 0, p.size * glowMult, p.color, glowAlpha);
 
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = p.color;
-      const shape = (p.type === 'firework' || p.type === 'charge') ? dailyVariation.particleShape : 'circle';
+      if (isFireworkBody) {
+        const shape = getThemeFireworkShape(themeRef.current.id);
 
-      switch (shape) {
-        case 'star': {
-          const spikes = 5;
-          const outerR = p.size;
-          const innerR = p.size * 0.4;
+        if (shape === 'petal') {
+          // Layered soft blossom petal (spring)
+          ctx.globalAlpha = alpha * 0.55;
+          ctx.fillStyle = p.color;
           ctx.beginPath();
-          for (let i = 0; i < spikes * 2; i++) {
-            const r = i % 2 === 0 ? outerR : innerR;
-            const angle = (Math.PI * i) / spikes - Math.PI / 2;
-            if (i === 0) ctx.moveTo(Math.cos(angle) * r, Math.sin(angle) * r);
-            else ctx.lineTo(Math.cos(angle) * r, Math.sin(angle) * r);
-          }
+          ctx.ellipse(0, 0, p.size * 0.55, p.size * 1.15, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = alpha * 0.35;
+          ctx.beginPath();
+          ctx.ellipse(-p.size * 0.15, -p.size * 0.1, p.size * 0.35, p.size * 0.7, -0.25, 0, Math.PI * 2);
+          ctx.fill();
+          // Soft cream highlight (not pure white)
+          ctx.globalAlpha = alpha * 0.2;
+          ctx.fillStyle = '#F5E6EA';
+          ctx.beginPath();
+          ctx.ellipse(p.size * 0.08, -p.size * 0.25, p.size * 0.18, p.size * 0.4, 0.1, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (shape === 'orb') {
+          // Luminous firefly wash (summer) — radial soft blot
+          const grd = ctx.createRadialGradient(0, 0, 0, 0, 0, p.size * 1.4);
+          grd.addColorStop(0, p.color);
+          grd.addColorStop(0.45, p.color);
+          grd.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.globalAlpha = alpha * 0.7;
+          ctx.fillStyle = grd;
+          ctx.beginPath();
+          ctx.arc(0, 0, p.size * 1.4, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = alpha * 0.35;
+          ctx.fillStyle = '#F0E8C8';
+          ctx.beginPath();
+          ctx.arc(-p.size * 0.15, -p.size * 0.15, p.size * 0.35, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (shape === 'leaf') {
+          // Maple / autumn leaf silhouette
+          ctx.globalAlpha = alpha * 0.65;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.moveTo(0, -p.size * 1.1);
+          ctx.quadraticCurveTo(p.size * 0.9, -p.size * 0.3, p.size * 0.55, p.size * 0.5);
+          ctx.quadraticCurveTo(0, p.size * 0.25, -p.size * 0.55, p.size * 0.5);
+          ctx.quadraticCurveTo(-p.size * 0.9, -p.size * 0.3, 0, -p.size * 1.1);
+          ctx.fill();
+          // Side lobes
+          ctx.globalAlpha = alpha * 0.4;
+          ctx.beginPath();
+          ctx.ellipse(p.size * 0.45, 0, p.size * 0.45, p.size * 0.28, 0.6, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.ellipse(-p.size * 0.45, 0, p.size * 0.45, p.size * 0.28, -0.6, 0, Math.PI * 2);
+          ctx.fill();
+          // Stem wash
+          ctx.globalAlpha = alpha * 0.35;
+          ctx.strokeStyle = p.color;
+          ctx.lineWidth = Math.max(0.8, p.size * 0.12);
+          ctx.beginPath();
+          ctx.moveTo(0, p.size * 0.3);
+          ctx.lineTo(0, p.size * 1.1);
+          ctx.stroke();
+        } else if (shape === 'crystal') {
+          // Soft ice crystal (winter)
+          ctx.globalAlpha = alpha * 0.5;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.moveTo(0, -p.size);
+          ctx.lineTo(p.size * 0.65, 0);
+          ctx.lineTo(0, p.size);
+          ctx.lineTo(-p.size * 0.65, 0);
           ctx.closePath();
           ctx.fill();
-          break;
-        }
-        case 'flower': {
-          const petals = 5;
-          for (let i = 0; i < petals; i++) {
-            const angle = (Math.PI * 2 * i) / petals;
-            ctx.beginPath();
-            ctx.ellipse(
-              Math.cos(angle) * p.size * 0.4,
-              Math.sin(angle) * p.size * 0.4,
-              p.size * 0.5,
-              p.size * 0.3,
-              angle,
-              0,
-              Math.PI * 2
-            );
-            ctx.fill();
-          }
+          ctx.globalAlpha = alpha * 0.35;
+          ctx.strokeStyle = '#E8F0F4';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          ctx.globalAlpha = alpha * 0.4;
           ctx.beginPath();
-          ctx.arc(0, 0, p.size * 0.25, 0, Math.PI * 2);
-          ctx.fillStyle = '#FFFFFF';
-          ctx.fill();
-          break;
-        }
-        case 'heart': {
-          const s = p.size * 0.6;
+          ctx.moveTo(0, -p.size * 1.15);
+          ctx.lineTo(0, p.size * 1.15);
+          ctx.moveTo(-p.size * 0.85, 0);
+          ctx.lineTo(p.size * 0.85, 0);
+          ctx.stroke();
+        } else if (shape === 'mist') {
+          // Rain streak / mist dash
+          ctx.globalAlpha = alpha * 0.55;
+          const grd = ctx.createLinearGradient(0, -p.size * 1.4, 0, p.size * 1.4);
+          grd.addColorStop(0, 'rgba(0,0,0,0)');
+          grd.addColorStop(0.35, p.color);
+          grd.addColorStop(0.65, p.color);
+          grd.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.fillStyle = grd;
           ctx.beginPath();
-          ctx.moveTo(0, s * 0.3);
-          ctx.bezierCurveTo(-s, -s * 0.5, -s * 0.5, -s, 0, -s * 0.4);
-          ctx.bezierCurveTo(s * 0.5, -s, s, -s * 0.5, 0, s * 0.3);
+          ctx.ellipse(0, 0, p.size * 0.28, p.size * 1.5, 0.15, 0, Math.PI * 2);
           ctx.fill();
-          break;
-        }
-        default: {
+        } else if (shape === 'moon') {
+          // Soft crescent (path-based, no destination-out)
+          ctx.globalAlpha = alpha * 0.55;
+          ctx.fillStyle = p.color;
           ctx.beginPath();
-          ctx.arc(0, 0, p.size, 0, Math.PI * 2);
+          ctx.arc(0, 0, p.size, -0.6, Math.PI + 0.6, false);
+          ctx.arc(p.size * 0.35, 0, p.size * 0.78, Math.PI + 0.5, -0.5, true);
+          ctx.closePath();
           ctx.fill();
-          break;
+          ctx.globalAlpha = alpha * 0.22;
+          ctx.fillStyle = '#F5EDE0';
+          ctx.beginPath();
+          ctx.arc(-p.size * 0.15, -p.size * 0.2, p.size * 0.22, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (shape === 'sand') {
+          // Soft dune grain diamond
+          ctx.globalAlpha = alpha * 0.55;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.moveTo(0, -p.size * 0.7);
+          ctx.quadraticCurveTo(p.size, 0, 0, p.size * 0.7);
+          ctx.quadraticCurveTo(-p.size, 0, 0, -p.size * 0.7);
+          ctx.fill();
+          ctx.globalAlpha = alpha * 0.25;
+          ctx.beginPath();
+          ctx.ellipse(0, 0, p.size * 0.35, p.size * 0.2, 0, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (shape === 'ripple') {
+          // Water ripple ellipse
+          ctx.globalAlpha = alpha * 0.45;
+          ctx.strokeStyle = p.color;
+          ctx.lineWidth = Math.max(0.8, p.size * 0.15);
+          ctx.beginPath();
+          ctx.ellipse(0, 0, p.size * 1.3, p.size * 0.55, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.globalAlpha = alpha * 0.35;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.ellipse(0, 0, p.size * 0.55, p.size * 0.28, 0, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          // Generic wash blot
+          const grd = ctx.createRadialGradient(0, 0, 0, 0, 0, p.size * 1.2);
+          grd.addColorStop(0, p.color);
+          grd.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.globalAlpha = alpha * 0.6;
+          ctx.fillStyle = grd;
+          ctx.beginPath();
+          ctx.arc(0, 0, p.size * 1.2, 0, Math.PI * 2);
+          ctx.fill();
         }
+      } else {
+        // Generic soft wash for trail / ambient / nebula / etc.
+        ctx.globalAlpha = alpha * (p.type === 'nebula' ? 0.55 : 0.75);
+        const grd = ctx.createRadialGradient(0, 0, 0, 0, 0, p.size);
+        grd.addColorStop(0, p.color);
+        grd.addColorStop(0.7, p.color);
+        grd.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = grd;
+        ctx.beginPath();
+        ctx.arc(0, 0, p.size, 0, Math.PI * 2);
+        ctx.fill();
       }
 
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.globalAlpha = 1;
     },
-    [dailyVariation.particleShape, getGlowSprite]
+    [getGlowSprite]
   );
 
   // Animation loop
@@ -2240,7 +2259,11 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
     const addAmbient = () => {
       const level = growthRef.current.level;
       const maxAmbient = 50 + level * 10;
-      if (particlesRef.current.filter(p => p.type === 'ambient').length >= maxAmbient) return;
+      let ambientCount = 0;
+      for (const p of particlesRef.current) {
+        if (p.type === 'ambient') ambientCount++;
+        if (ambientCount >= maxAmbient) return;
+      }
 
       const colors = themeRef.current.particleColors;
       const color = colors[Math.floor(Math.random() * colors.length)];
@@ -2252,27 +2275,27 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
       let rotationSpeed = 0;
       let size = 1 + Math.random() * 2;
 
-      if (themeId === 'spring') {
-        // Petal-like drifting
+      if (themeId === 'spring' || themeId === 'moon') {
         vx = (Math.random() - 0.5) * 0.5;
-        vy = 0.3 + Math.random() * 0.4;
+        vy = themeId === 'moon' ? 0.15 + Math.random() * 0.25 : 0.3 + Math.random() * 0.4;
         rotationSpeed = (Math.random() - 0.5) * 0.03;
-      } else if (themeId === 'summer') {
-        // Firefly-like slow drift upward
+      } else if (themeId === 'summer' || themeId === 'lake') {
         vx = (Math.random() - 0.5) * 0.4;
         vy = -0.1 - Math.random() * 0.2;
         size = 1.5 + Math.random() * 2;
-      } else if (themeId === 'autumn') {
-        // Falling leaf-like
+      } else if (themeId === 'autumn' || themeId === 'desert') {
         vx = (Math.random() - 0.5) * 0.6;
         vy = 0.4 + Math.random() * 0.3;
         rotationSpeed = (Math.random() - 0.5) * 0.04;
         size = 2 + Math.random() * 2;
       } else if (themeId === 'winter') {
-        // Snow-like slow fall
         vx = (Math.random() - 0.5) * 0.2;
         vy = 0.2 + Math.random() * 0.2;
         size = 1 + Math.random() * 1.5;
+      } else if (themeId === 'rain') {
+        vx = (Math.random() - 0.5) * 0.15;
+        vy = 0.55 + Math.random() * 0.45;
+        size = 1 + Math.random() * 1.2;
       }
 
       addParticles([{
@@ -2291,8 +2314,6 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
         breathSpeed: 0.5 + Math.random() * 1.5,
       }]);
     };
-
-    window.addEventListener('resize', resize);
 
     const animate = () => {
       if (!running) return;
@@ -2454,9 +2475,15 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
         }
 
         if (p.type === 'firework' || p.type === 'charge') {
-          p.vy += 0.05;
-          p.vx *= 0.98;
-          p.vy *= 0.98;
+          const motion = getThemeFireworkMotion(themeRef.current.id);
+          p.vy += motion.gravity;
+          p.vx *= motion.drag;
+          p.vy *= motion.drag;
+          // Gentle sway for soft drifting themes
+          const tid = themeRef.current.id;
+          if (tid === 'spring' || tid === 'autumn' || tid === 'desert' || tid === 'moon') {
+            p.vx += Math.sin(p.life * 8 + p.rotation) * 0.02;
+          }
         } else if (p.type === 'swipe') {
           p.vx *= 0.95;
           p.vy *= 0.95;
@@ -2475,17 +2502,19 @@ export function ParticleCanvas({ theme, growth, collection, onGesture, onChargeS
         } else if (p.type === 'ambient') {
           // Theme-specific ambient movement with breathing
           const themeId = themeRef.current.id;
-          if (themeId === 'spring') {
+          if (themeId === 'spring' || themeId === 'moon') {
             p.vx += Math.sin(timeSec + p.breathPhase!) * 0.002;
             p.rotation += p.rotationSpeed;
-          } else if (themeId === 'summer') {
-            // Fireflies: gentle upward drift with occasional direction change
+          } else if (themeId === 'summer' || themeId === 'lake') {
             p.vy += Math.sin(now * 0.002 + p.breathPhase!) * 0.001;
-          } else if (themeId === 'autumn') {
+          } else if (themeId === 'autumn' || themeId === 'desert') {
             p.vx += Math.sin(p.life * 8) * 0.02;
             p.rotation += p.rotationSpeed;
           } else if (themeId === 'winter') {
             p.vx += Math.sin(timeSec + p.x * 0.01) * 0.003;
+          } else if (themeId === 'rain') {
+            p.vy += 0.01;
+            p.vx += Math.sin(timeSec * 2 + p.y * 0.02) * 0.002;
           }
           p.vx *= 0.995;
           p.vy *= 0.995;

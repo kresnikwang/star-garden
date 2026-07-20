@@ -475,6 +475,11 @@ const comboGenerators: Record<string, Record<ComboTier, ComboGenerator>> = {
   summer: { base: summerBaseCombo, ultimate: summerUltimateCombo },
   autumn: { base: autumnBaseCombo, ultimate: autumnUltimateCombo },
   winter: { base: winterBaseCombo, ultimate: winterUltimateCombo },
+  // New maps reuse closest seasonal combo language (palette comes from theme)
+  rain: { base: winterBaseCombo, ultimate: winterUltimateCombo },
+  moon: { base: springBaseCombo, ultimate: springUltimateCombo },
+  desert: { base: autumnBaseCombo, ultimate: autumnUltimateCombo },
+  lake: { base: summerBaseCombo, ultimate: summerUltimateCombo },
 };
 
 /**

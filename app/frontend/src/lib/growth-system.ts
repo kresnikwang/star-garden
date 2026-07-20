@@ -28,27 +28,27 @@ function getGrowthKey(themeId: string): string {
 }
 
 export const GESTURES: GestureType[] = [
-  { id: 'tap', name: '点触绽放', icon: '👆', description: '点击屏幕绽放烟花', unlockLevel: 0 },
-  { id: 'swipe', name: '流光滑动', icon: '✋', description: '滑动留下光轨尾迹', unlockLevel: 2 },
-  { id: 'longpress', name: '蓄力烟花', icon: '💫', description: '长按蓄力释放大型烟花', unlockLevel: 3 },
-  { id: 'circle', name: '星云漩涡', icon: '🌀', description: '画圆创造旋转星云', unlockLevel: 5 },
-  { id: 'pinch', name: '聚散星辰', icon: '🤏', description: '双指捏合聚拢或散开粒子', unlockLevel: 7 },
-  { id: 'combo_triple_tap', name: '主题爆发', icon: '💥', description: '快速三连击触发主题专属特效', unlockLevel: 4 },
-  { id: 'combo_circle_pinch', name: '星压缩', icon: '⚡', description: '画圆后捏合将星云压缩成能量球', unlockLevel: 6 },
-  { id: 'combo_dual_press', name: '粒子桥', icon: '🌉', description: '双指同时长按生成粒子桥', unlockLevel: 8 },
+  { id: 'tap', name: '点触绽放', icon: 'tap', description: '点击屏幕绽放烟花', unlockLevel: 0 },
+  { id: 'swipe', name: '流光滑动', icon: 'swipe', description: '滑动留下光轨尾迹', unlockLevel: 2 },
+  { id: 'longpress', name: '蓄力烟花', icon: 'longpress', description: '长按蓄力释放大型烟花', unlockLevel: 3 },
+  { id: 'circle', name: '星云漩涡', icon: 'circle', description: '画圆创造旋转星云', unlockLevel: 5 },
+  { id: 'pinch', name: '聚散星辰', icon: 'pinch', description: '双指捏合聚拢或散开粒子', unlockLevel: 7 },
+  { id: 'combo_triple_tap', name: '主题爆发', icon: 'combo_burst', description: '快速三连击触发主题专属特效', unlockLevel: 4 },
+  { id: 'combo_circle_pinch', name: '星压缩', icon: 'combo_compress', description: '画圆后捏合将星云压缩成能量球', unlockLevel: 6 },
+  { id: 'combo_dual_press', name: '粒子桥', icon: 'combo_bridge', description: '双指同时长按生成粒子桥', unlockLevel: 8 },
 ];
 
 export const HIDDEN_DISCOVERIES = [
-  { id: 'first_swipe', name: '初次光轨', emoji: '🌈', condition: 'First swipe gesture' },
-  { id: 'big_firework', name: '超级烟花', emoji: '🎆', condition: 'Hold for 3+ seconds' },
-  { id: 'nebula_born', name: '星云诞生', emoji: '🌌', condition: 'First circle gesture' },
-  { id: 'breath_master', name: '呼吸大师', emoji: '🧘', condition: 'Complete 3 breathing sessions' },
-  { id: 'collector', name: '收藏家', emoji: '🏆', condition: 'Collect 20 items' },
-  { id: 'night_owl', name: '夜行者', emoji: '🦉', condition: 'Play after midnight' },
-  { id: 'rainbow_trail', name: '彩虹轨迹', emoji: '🌈', condition: 'Swipe 50 times' },
-  { id: 'galaxy_maker', name: '造星者', emoji: '⭐', condition: 'Create 10 nebulas' },
-  { id: 'theme_complete', name: '四季收藏家', emoji: '🎑', condition: 'Collect all items in a theme' },
-  { id: 'combo_master', name: '组合大师', emoji: '⚡', condition: 'Perform 5 combo moves' },
+  { id: 'first_swipe', name: '初次光轨', condition: 'First swipe gesture' },
+  { id: 'big_firework', name: '超级烟花', condition: 'Hold for 3+ seconds' },
+  { id: 'nebula_born', name: '星云诞生', condition: 'First circle gesture' },
+  { id: 'breath_master', name: '呼吸大师', condition: 'Complete 3 breathing sessions' },
+  { id: 'collector', name: '收藏家', condition: 'Collect 20 items' },
+  { id: 'night_owl', name: '夜行者', condition: 'Play after midnight' },
+  { id: 'rainbow_trail', name: '彩虹轨迹', condition: 'Swipe 50 times' },
+  { id: 'galaxy_maker', name: '造星者', condition: 'Create 10 nebulas' },
+  { id: 'theme_complete', name: '四季收藏家', condition: 'Collect all items in a theme' },
+  { id: 'combo_master', name: '组合大师', condition: 'Perform 5 combo moves' },
 ];
 
 export const LEVEL_EFFECTS: Record<number, string> = {

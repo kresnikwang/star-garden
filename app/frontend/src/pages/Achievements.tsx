@@ -6,7 +6,7 @@ import {
   getCompletionStats,
   loadStore,
 } from '@/lib/achievement-store';
-import { themes } from '@/lib/themes';
+import { StyleIcon } from '@/components/StyleIcon';
 
 type Filter = 'all' | 'unlocked' | 'common' | 'rare' | 'epic' | 'legendary';
 
@@ -177,12 +177,17 @@ export default function Achievements() {
                 <div className="flex items-center gap-3">
                   {/* Icon badge */}
                   <div
-                    className="w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0"
+                    className="relative w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
                     style={{ background: `${color}20`, border: `1.5px solid ${color}60` }}
                   >
-                    {isUnlocked ? a.icon : '🔒'}
+                    <StyleIcon
+                      kind={isUnlocked ? a.icon : 'lock'}
+                      size={22}
+                      color={color}
+                      muted={!isUnlocked}
+                    />
                     {isNew && (
-                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[8px] px-1 rounded-full animate-pulse">NEW</span>
+                      <span className="absolute -top-1 -right-1 bg-red-500/90 text-white text-[8px] px-1 rounded-full animate-pulse">NEW</span>
                     )}
                   </div>
 
@@ -258,10 +263,15 @@ function AchievementModal({ achievement: a, progress, onClose }: { achievement: 
 
         {/* Icon */}
         <div
-          className="w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center text-4xl"
+          className="w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center"
           style={{ background: `${color}20`, border: `2px solid ${color}60` }}
         >
-          {progress?.unlocked ? a.icon : '🔒'}
+          <StyleIcon
+            kind={progress?.unlocked ? a.icon : 'lock'}
+            size={44}
+            color={color}
+            muted={!progress?.unlocked}
+          />
         </div>
 
         {/* Name + rarity */}
@@ -294,7 +304,8 @@ function AchievementModal({ achievement: a, progress, onClose }: { achievement: 
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm"
             style={{ background: `${color}15`, border: `1px solid ${color}30`, color }}
           >
-            🎁 {a.reward}
+            <StyleIcon kind="gift" size={16} color={color} />
+            <span>{a.reward}</span>
           </div>
         )}
 

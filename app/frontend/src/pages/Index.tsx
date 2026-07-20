@@ -1,7 +1,18 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { themes } from '@/lib/themes';
+import { themes, getThemeList } from '@/lib/themes';
 import { getCollection, setSelectedTheme, getSelectedTheme } from '@/lib/collection';
+import { CollectibleIcon } from '@/components/CollectibleIcon';
+
+// Stable star field — random once, not on every re-render
+const STAR_FIELD = Array.from({ length: 50 }, (_, i) => ({
+  id: i,
+  left: ((i * 47 + 13) % 100),
+  top: ((i * 73 + 29) % 100),
+  delay: (i * 0.17) % 3,
+  duration: 2 + (i % 5) * 0.6,
+  opacity: 0.3 + (i % 5) * 0.1,
+}));
 
 export default function Index() {
   const navigate = useNavigate();
@@ -19,22 +30,22 @@ export default function Index() {
     }
   };
 
-  const themeList = Object.values(themes);
+  const themeList = getThemeList();
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#0a0a2e] via-[#1a1a3e] to-[#2a1a4e] flex flex-col items-center justify-center p-6 overflow-hidden relative">
+    <div className="min-h-screen bg-gradient-to-b from-[#0a0a2e] via-[#1a1a3e] to-[#2a1a4e] flex flex-col items-center justify-center p-6 overflow-y-auto relative">
       {/* Animated background stars */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        {Array.from({ length: 50 }).map((_, i) => (
+        {STAR_FIELD.map((s) => (
           <div
-            key={i}
+            key={s.id}
             className="absolute w-1 h-1 bg-white rounded-full animate-pulse"
             style={{
-              left: `${Math.random() * 100}%`,
-              top: `${Math.random() * 100}%`,
-              animationDelay: `${Math.random() * 3}s`,
-              animationDuration: `${2 + Math.random() * 3}s`,
-              opacity: 0.3 + Math.random() * 0.5,
+              left: `${s.left}%`,
+              top: `${s.top}%`,
+              animationDelay: `${s.delay}s`,
+              animationDuration: `${s.duration}s`,
+              opacity: s.opacity,
             }}
           />
         ))}
@@ -48,8 +59,8 @@ export default function Index() {
         <p className="text-white/50 text-sm">选择你的治愈旅程</p>
       </div>
 
-      {/* Theme Selection Grid */}
-      <div className="grid grid-cols-2 gap-4 max-w-sm w-full z-10 mb-8">
+      {/* Theme Selection Grid — 8 maps */}
+      <div className="grid grid-cols-2 gap-3 max-w-md w-full z-10 mb-8">
         {themeList.map((theme) => {
           const collection = getCollection(theme.id);
           const totalCollected = Object.values(collection.collected).reduce(
@@ -87,13 +98,15 @@ export default function Index() {
                   {theme.description}
                 </p>
                 {totalCollected > 0 && (
-                  <div className="flex items-center gap-1 mt-1.5">
+                  <div className="flex items-center gap-1.5 mt-1.5">
                     <span className="text-[10px] text-white/40">
                       已收集 {totalCollected}
                     </span>
-                    <span className="text-xs">
-                      {theme.collectibleEmojis[0]}
-                    </span>
+                    <CollectibleIcon
+                      emoji={theme.collectibleEmojis[0]}
+                      size={14}
+                      color={theme.accentColor}
+                    />
                   </div>
                 )}
               </div>
@@ -119,7 +132,7 @@ export default function Index() {
             : 'bg-white/5 text-white/30 border border-white/10 cursor-not-allowed'
         }`}
       >
-        {selectedId ? '开始治愈之旅 ✨' : '请选择一个主题'}
+        {selectedId ? '开始治愈之旅' : '请选择一个主题'}
       </button>
 
       {/* Garden button */}

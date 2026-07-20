@@ -6,6 +6,7 @@ import { HashRouter, BrowserRouter, Routes, Route } from 'react-router-dom';
 // Use HashRouter for static hosting compatibility (e.g. Mule Pages)
 // BrowserRouter requires server-side fallback for SPA routes
 const useHash = window.location.hostname.includes('.mule.page') || window.location.hash.startsWith('#');
+const basename = (import.meta.env.BASE_URL || '/').replace(/\/$/, '') || undefined;
 const Router = useHash ? HashRouter : BrowserRouter;
 import BlogRoutes from './blog-routes';
 import Index from './pages/Index';
@@ -35,7 +36,7 @@ const App = () => (
     {/* MODULE_PROVIDERS_END */}
     <TooltipProvider>
       <Toaster />
-      <Router>
+      <Router basename={useHash ? undefined : basename}>
         <AppRoutes />
       </Router>
     </TooltipProvider>

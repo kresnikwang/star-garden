@@ -112,28 +112,48 @@ export function ShareCard({ theme, growth, collection, onClose }: ShareCardProps
     ctx.font = '12px sans-serif';
 
     const stats = [
-      `🔥 连续 ${collection.streakDays} 天`,
-      `✨ 收集 ${totalCollected} 件`,
-      `🧘 呼吸 ${growth.breathingSessions} 次`,
-      `🌌 发现 ${growth.hiddenDiscoveries.length} 个彩蛋`,
+      `连续 ${collection.streakDays} 天`,
+      `收集 ${totalCollected} 件`,
+      `呼吸 ${growth.breathingSessions} 次`,
+      `发现 ${growth.hiddenDiscoveries.length} 个彩蛋`,
     ];
 
     stats.forEach((stat, i) => {
       ctx.fillText(stat, w / 2, statsY + i * 28);
     });
 
-    // Unlocked gestures
+    // Unlocked gestures (names, not system emoji)
     const gestureY = h * 0.78;
     ctx.fillStyle = 'rgba(255,255,255,0.4)';
     ctx.font = '11px sans-serif';
     ctx.fillText('已解锁手势', w / 2, gestureY);
 
-    const gestureEmojis = growth.unlockedGestures
-      .map(id => GESTURES.find(g => g.id === id)?.icon || '')
-      .join('  ');
-    ctx.font = '24px sans-serif';
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillText(gestureEmojis, w / 2, gestureY + 30);
+    const gestureNames = growth.unlockedGestures
+      .map((id) => GESTURES.find((g) => g.id === id)?.name || '')
+      .filter(Boolean)
+      .join(' · ');
+    ctx.font = '12px sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    // Wrap long gesture list
+    const maxW = w - 48;
+    if (ctx.measureText(gestureNames).width <= maxW) {
+      ctx.fillText(gestureNames || '点触绽放', w / 2, gestureY + 28);
+    } else {
+      const parts = gestureNames.split(' · ');
+      let line = '';
+      let lineY = gestureY + 24;
+      for (const part of parts) {
+        const next = line ? `${line} · ${part}` : part;
+        if (ctx.measureText(next).width > maxW && line) {
+          ctx.fillText(line, w / 2, lineY);
+          line = part;
+          lineY += 18;
+        } else {
+          line = next;
+        }
+      }
+      if (line) ctx.fillText(line, w / 2, lineY);
+    }
 
     // Footer
     ctx.fillStyle = 'rgba(255,255,255,0.3)';
@@ -153,7 +173,7 @@ export function ShareCard({ theme, growth, collection, onClose }: ShareCardProps
         const file = new File([blob], 'starry-garden-share.png', { type: 'image/png' });
         await navigator.share({
           title: '星夜花园',
-          text: `我在星夜花园达到了 Lv.${growth.level}！已解锁 ${growth.unlockedGestures.length} 种手势 ✨`,
+          text: `我在星夜花园达到了 Lv.${growth.level}！已解锁 ${growth.unlockedGestures.length} 种手势`,
           files: [file],
         });
       } catch {
@@ -192,14 +212,14 @@ export function ShareCard({ theme, growth, collection, onClose }: ShareCardProps
             onClick={handleDownload}
             className="px-5 py-2.5 rounded-full bg-white/15 backdrop-blur-md text-white text-sm border border-white/20 hover:bg-white/25 transition-all"
           >
-            保存图片 📥
+            保存图片
           </button>
           {navigator.share && (
             <button
               onClick={handleShare}
               className="px-5 py-2.5 rounded-full bg-white/15 backdrop-blur-md text-white text-sm border border-white/20 hover:bg-white/25 transition-all"
             >
-              分享 🔗
+              分享
             </button>
           )}
         </div>
